@@ -1,5 +1,6 @@
 #include <stdio.h>
 #include <stdlib.h>
+#include <signal.h>
 #include <string.h>
 #include <unistd.h>
 #include <sys/types.h>
@@ -7,11 +8,16 @@
 
 #include <jansson.h>
 
+/* messages passed between the host and container */
+#define CONTAINER_SETUP_COMPLETE "container-setup-complete\n"
+
 int validate_config(json_t * config);
 int validate_version(json_t * config);
 int run_container(json_t * config);
 int handle_parent(json_t * config, pid_t cpid, int *to_child, int *from_child);
 int handle_child(json_t * config, int *to_parent, int *from_parent);
+int exec_process(json_t * config);
+void block_forever();
 int _wait(pid_t pid);
 ssize_t getline_fd(char **buf, size_t * n, int fd);
 
@@ -181,23 +187,32 @@ int run_container(json_t * config)
 int handle_parent(json_t * config, pid_t cpid, int *to_child, int *from_child)
 {
 	char *line = NULL;
-	size_t n = 0;
-	char buf[] = "hello\n";
-	size_t len = strlen(buf);
+	size_t allocated = 0, len;
 	int err = 0;
 
-	if (write(*to_child, buf, len) != len) {
-		perror("write to container");
-		goto cleanup;
-	}
+	line = CONTAINER_SETUP_COMPLETE;
+	len = strlen(line);
 
-	len = getline_fd(&line, &n, *from_child);
-	if (len == -1) {
+	if (close(*from_child) == -1) {
+		perror("close container-to-host pipe read-end");
 		err = 1;
+		*from_child = -1;
 		goto cleanup;
 	}
-	fprintf(stderr, "read from container (%d): %.*s\n", (int)len,
-		(int)len - 1, line);
+	*from_child = -1;
+
+	if (write(*to_child, line, len) != len) {
+		perror("write to container");
+		return 1;
+	}
+	line = NULL;
+
+	if (close(*to_child) == -1) {
+		perror("close host-to-container pipe write-end");
+		*to_child = -1;
+		return 1;
+	}
+	*to_child = -1;
 
 	err = _wait(cpid);
 
@@ -211,26 +226,76 @@ int handle_parent(json_t * config, pid_t cpid, int *to_child, int *from_child)
 int handle_child(json_t * config, int *to_parent, int *from_parent)
 {
 	char *line = NULL;
-	size_t n = 0, len;
+	size_t allocated = 0, len;
 	int err = 0;
 
-	len = getline_fd(&line, &n, *from_parent);
+	if (close(*to_parent) == -1) {
+		perror("close host-to-container pipe read-end");
+		err = 1;
+		*to_parent = -1;
+		goto cleanup;
+	}
+	*to_parent = -1;
+
+	len = getline_fd(&line, &allocated, *from_parent);
 	if (len == -1) {
 		err = 1;
 		goto cleanup;
 	}
-	fprintf(stderr, "read from host (%d): %.*s\n", (int)len, (int)len - 1,
-		line);
-	line[3] = 'X';
-	if (write(*to_parent, line, len) != len) {
-		perror("write to host");
+	if (strncmp
+	    (CONTAINER_SETUP_COMPLETE, line,
+	     strlen(CONTAINER_SETUP_COMPLETE)) != 0) {
+		fprintf(stderr, "unexpected message from host(%d): %.*s\n",
+			(int)len, (int)len - 1, line);
+		goto cleanup;
 	}
+
+	if (close(*from_parent) == -1) {
+		perror("close container-to-host pipe read-end");
+		err = 1;
+		*from_parent = -1;
+		goto cleanup;
+	}
+	*from_parent = -1;
+
+	err = exec_process(config);
 
  cleanup:
 	if (line != NULL) {
 		free(line);
 	}
 	return err;
+}
+
+int exec_process(json_t * config)
+{
+	json_t *value;
+	int err = 0;
+
+	value = json_object_get(config, "process");
+	if (!value) {
+		block_forever();
+		err = 1;
+	}
+
+ cleanup:
+	if (value) {
+		json_decref(value);
+	}
+	return err;
+}
+
+void block_forever()
+{
+	sigset_t mask;
+
+	if (sigemptyset(&mask) == -1) {
+		perror("sigemptyset");
+		return;
+	}
+	sigsuspend(&mask);
+	perror("sigsuspend");
+	return;
 }
 
 int _wait(pid_t pid)
