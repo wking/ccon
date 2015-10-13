@@ -19,6 +19,8 @@ int handle_version(json_t * config);
 int handle_process(json_t * config);
 int handle_parent(json_t * config, pid_t cpid, int *to_child, int *from_child);
 int handle_child(json_t * config, int *to_parent, int *from_parent);
+int _wait(pid_t pid);
+ssize_t getline_fd(char **buf, size_t * n, int fd);
 
 config_entry_t config_handlers[] = {
 	{
@@ -192,22 +194,75 @@ int handle_process(json_t * config)
 
 int handle_parent(json_t * config, pid_t cpid, int *to_child, int *from_child)
 {
-	siginfo_t siginfo;
+	char *line = NULL;
+	size_t n = 0;
+	char buf[] = "hello\n";
+	size_t len = strlen(buf);
 	int err = 0;
 
-	err = waitid(P_PID, cpid, &siginfo, WEXITED);
-	if (err == -1) {
-		perror("waitid");
+	if (write(*to_child, buf, len) != len) {
+		perror("write to container");
+		goto cleanup;
+	}
+
+	len = getline_fd(&line, &n, *from_child);
+	if (len == -1) {
 		err = 1;
 		goto cleanup;
+	}
+	fprintf(stderr, "read from container (%d): %.*s\n", (int)len,
+		(int)len - 1, line);
+
+	err = _wait(cpid);
+
+ cleanup:
+	if (line != NULL) {
+		free(line);
+	}
+	return err;
+}
+
+int handle_child(json_t * config, int *to_parent, int *from_parent)
+{
+	char *line = NULL;
+	size_t n = 0, len;
+	int err = 0;
+
+	len = getline_fd(&line, &n, *from_parent);
+	if (len == -1) {
+		err = 1;
+		goto cleanup;
+	}
+	fprintf(stderr, "read from host (%d): %.*s\n", (int)len, (int)len - 1,
+		line);
+	line[3] = 'X';
+	if (write(*to_parent, line, len) != len) {
+		perror("write to host");
+	}
+
+ cleanup:
+	if (line != NULL) {
+		free(line);
+	}
+	return err;
+}
+
+int _wait(pid_t pid)
+{
+	siginfo_t siginfo;
+	int err;
+
+	err = waitid(P_PID, pid, &siginfo, WEXITED);
+	if (err == -1) {
+		perror("waitid");
+		return 1;
 	}
 
 	err = 1;
 	switch (siginfo.si_code) {
 	case CLD_EXITED:
 		err = siginfo.si_status;
-		fprintf(stderr, "container process %d exited with %d\n",
-			(int)cpid, err);
+		fprintf(stderr, "process %d exited with %d\n", (int)pid, err);
 		break;
 	case CLD_KILLED:
 		fprintf(stderr, "child killed (%s, %d)\n",
@@ -222,14 +277,37 @@ int handle_parent(json_t * config, pid_t cpid, int *to_child, int *from_child)
 			siginfo.si_code);
 	}
 
- cleanup:
-	if (line != NULL) {
-		free(line);
-	}
 	return err;
 }
 
-int handle_child(json_t * config, int *to_parent, int *from_parent)
+// getline(3) but reading from a file descriptor
+ssize_t getline_fd(char **buf, size_t * n, int fd)
 {
-	return 0;
+	ssize_t size = 0, max = 16384, s;
+	char delim = '\n';
+	size_t block = 512;
+	do {
+		if (size == *n) {
+			char *b = realloc(*buf, *n + block);
+			if (b == NULL) {
+				perror("realloc");
+				return -1;
+			}
+			*buf = b;
+			*n += block;
+		}
+		s = read(fd, (*buf) + size, 1);
+		if (s == -1) {
+			perror("read");
+			return -1;
+		}
+		if (s != 1) {
+			return -1;
+		}
+		size += s;
+		if (size >= max) {
+			return -1;
+		}
+	} while ((*buf)[size - 1] != delim);
+	return size;
 }
