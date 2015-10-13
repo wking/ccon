@@ -7,32 +7,13 @@
 
 #include <jansson.h>
 
-typedef int (*config_handler_t) (json_t * config);
-
-typedef struct config_entry {
-	const char *key;
-	config_handler_t handler;
-} config_entry_t;
-
 int validate_config(json_t * config);
-int handle_version(json_t * config);
-int handle_process(json_t * config);
+int validate_version(json_t * config);
+int run_container(json_t * config);
 int handle_parent(json_t * config, pid_t cpid, int *to_child, int *from_child);
 int handle_child(json_t * config, int *to_parent, int *from_parent);
 int _wait(pid_t pid);
 ssize_t getline_fd(char **buf, size_t * n, int fd);
-
-config_entry_t config_handlers[] = {
-	{
-	 .key = "version",
-	 .handler = &handle_version,
-	 },
-	{
-	 .key = "process",
-	 .handler = &handle_process,
-	 },
-	{},
-};
 
 int main(int argc, char **argv)
 {
@@ -54,21 +35,7 @@ int main(int argc, char **argv)
 		goto cleanup;
 	}
 
-	for (i = 0; config_handlers[i].key; i++) {
-		value = json_object_get(config, config_handlers[i].key);
-		if (!value) {
-			fprintf(stderr, "failed to get %s from config\n",
-				config_handlers[i].key);
-			err = 1;
-			goto cleanup;
-		}
-		err = (*config_handlers[i].handler) (value);
-		if (err) {
-			fprintf(stderr, "failed to handle %s\n",
-				config_handlers[i].key);
-			goto cleanup;
-		}
-	}
+	err = run_container(config);
 
  cleanup:
 	if (config) {
@@ -80,15 +47,34 @@ int main(int argc, char **argv)
 
 int validate_config(json_t * config)
 {
+	json_t *value;
+	int err;
+
 	if (!json_is_object(config)) {
 		fprintf(stderr, "config JSON is not an object\n");
 		return 1;
 	}
+
+	value = json_object_get(config, "version");
+	if (!value) {
+		fprintf(stderr, "failed to get version from config\n");
+		err = 1;
+		goto cleanup;
+	}
+	err = validate_version(value);
+	if (err) {
+		goto cleanup;
+	}
 	// TODO: actually validate the data
+
+ cleanup:
+	if (value) {
+		json_decref(value);
+	}
 	return 0;
 }
 
-int handle_version(json_t * config)
+int validate_version(json_t * config)
 {
 	const char *version = json_string_value(config);
 	const char *supported_versions[] = {
@@ -109,7 +95,7 @@ int handle_version(json_t * config)
 	return 1;
 }
 
-int handle_process(json_t * config)
+int run_container(json_t * config)
 {
 	int pipe_in[2], pipe_out[2];
 	pid_t cpid;
