@@ -11,6 +11,8 @@
 /* messages passed between the host and container */
 #define CONTAINER_SETUP_COMPLETE "container-setup-complete\n"
 
+extern char **environ;
+
 int validate_config(json_t * config);
 int validate_version(json_t * config);
 int run_container(json_t * config);
@@ -20,6 +22,7 @@ int exec_process(json_t * config);
 void block_forever();
 int _wait(pid_t pid);
 ssize_t getline_fd(char **buf, size_t * n, int fd);
+char **json_array_of_strings_value(json_t * array);
 
 int main(int argc, char **argv)
 {
@@ -269,18 +272,93 @@ int handle_child(json_t * config, int *to_parent, int *from_parent)
 
 int exec_process(json_t * config)
 {
-	json_t *value;
+	char *path = NULL;
+	char **argv = NULL, **env = NULL;
+	json_t *process = NULL, *value = NULL;
+	size_t i;
 	int err = 0;
 
-	value = json_object_get(config, "process");
-	if (!value) {
+	process = json_object_get(config, "process");
+	if (!process) {
+		fprintf(stderr, "process not defined, blocking forever\n");
 		block_forever();
+		fprintf(stderr, "container block failed\n");
+		err = 1;
+		goto cleanup;
+	}
+
+	value = json_object_get(process, "args");
+	if (!value) {
+		fprintf(stderr,
+			"process.args not specified, blocking forever\n");
+		block_forever();
+		fprintf(stderr, "container block failed\n");
+		err = 1;
+		goto cleanup;
+	}
+
+	argv = json_array_of_strings_value(value);
+	if (!argv) {
+		fprintf(stderr, "failed to extract process.args\n");
+		err = 1;
+		goto cleanup;
+	}
+	json_decref(value);
+
+	value = json_object_get(process, "env");
+	if (value) {
+		env = json_array_of_strings_value(value);
+		if (!env) {
+			fprintf(stderr, "failed to extract process.env\n");
+			err = 1;
+			goto cleanup;
+		}
+		json_decref(value);
+	} else {
+		env = environ;
+	}
+
+	value = json_object_get(process, "path");
+	if (value) {
+		path = strdup(json_string_value(value));
+		if (!path) {
+			perror("strdup");
+			err = 1;
+			goto cleanup;
+		}
+		json_decref(value);
+
+		execvpe(path, argv, env);
+		perror("execvpe");
+		err = 1;
+	} else {
+
+		execvpe(argv[0], argv, env);
+		perror("execvpe");
 		err = 1;
 	}
 
  cleanup:
+	if (process) {
+		json_decref(process);
+	}
 	if (value) {
 		json_decref(value);
+	}
+	if (argv) {
+		for (i = 0; argv[i] != NULL; i++) {
+			free(argv[i]);
+		}
+		free(argv);
+	}
+	if (env && env != environ) {
+		for (i = 0; env[i] != NULL; i++) {
+			free(env[i]);
+		}
+		free(env);
+	}
+	if (path) {
+		free(path);
 	}
 	return err;
 }
@@ -361,4 +439,41 @@ ssize_t getline_fd(char **buf, size_t * n, int fd)
 		}
 	} while ((*buf)[size - 1] != delim);
 	return size;
+}
+
+// Allocate a null-terminated array of strings from a JSON array.
+char **json_array_of_strings_value(json_t * array)
+{
+	char **a = NULL;
+	json_t *value = NULL;
+	size_t i;
+	int err = 0;
+
+	i = json_array_size(array);
+	a = malloc(sizeof(char *) * (i + 1));
+	if (!a) {
+		perror("malloc");
+		err = 1;
+		goto cleanup;
+	}
+	memset(a, 0, sizeof(char *) * (i + 1));
+	json_array_foreach(array, i, value) {
+		a[i] = strdup(json_string_value(value));
+		if (!a[i]) {
+			perror("strdup");
+			err = 1;
+			break;
+		}
+	}
+	return a;
+
+ cleanup:
+	if (a) {
+		for (i = 0; a[i] != NULL; i++) {
+			free(a[i]);
+		}
+		free(a);
+		a = NULL;
+	}
+	return a;
 }
