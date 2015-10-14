@@ -68,19 +68,13 @@ int validate_config(json_t * config)
 	value = json_object_get(config, "version");
 	if (!value) {
 		fprintf(stderr, "failed to get version from config\n");
-		err = 1;
-		goto cleanup;
+		return 1;
 	}
 	err = validate_version(value);
 	if (err) {
-		goto cleanup;
+		return err;
 	}
 	// TODO: actually validate the data
-
- cleanup:
-	if (value) {
-		json_decref(value);
-	}
 	return 0;
 }
 
@@ -280,7 +274,7 @@ int set_user_group(json_t * config)
 {
 	uid_t uid;
 	gid_t gid, *groups = NULL;
-	json_t *process = NULL, *user = NULL, *v1 = NULL, *v2 = NULL;
+	json_t *process, *user, *v1, *v2;
 	size_t i, n = 0;
 	int err = 0;
 
@@ -303,7 +297,6 @@ int set_user_group(json_t * config)
 			err = 1;
 			goto cleanup;
 		}
-		json_decref(v1);
 	}
 
 	v1 = json_object_get(user, "additionalGids");
@@ -318,7 +311,6 @@ int set_user_group(json_t * config)
 		json_array_foreach(v1, i, v2) {
 			groups[i] = (gid_t) json_integer_value(v2);
 		}
-		json_decref(v1);
 		v1 = NULL;
 		fprintf(stderr, "set additional GIDs to [");
 		for (i = 0; i < n; i++) {
@@ -346,21 +338,9 @@ int set_user_group(json_t * config)
 			err = 1;
 			goto cleanup;
 		}
-		json_decref(v1);
 	}
-
-	return 0;
 
  cleanup:
-	if (process) {
-		json_decref(process);
-	}
-	if (user) {
-		json_decref(user);
-	}
-	if (v1) {
-		json_decref(v1);
-	}
 	if (groups) {
 		free(groups);
 	}
@@ -371,7 +351,7 @@ int exec_process(json_t * config)
 {
 	char *path = NULL;
 	char **argv = NULL, **env = NULL;
-	json_t *process = NULL, *value = NULL;
+	json_t *process, *value;
 	size_t i;
 	int err = 0;
 
@@ -400,7 +380,6 @@ int exec_process(json_t * config)
 		err = 1;
 		goto cleanup;
 	}
-	json_decref(value);
 
 	value = json_object_get(process, "env");
 	if (value) {
@@ -410,7 +389,6 @@ int exec_process(json_t * config)
 			err = 1;
 			goto cleanup;
 		}
-		json_decref(value);
 	} else {
 		env = environ;
 	}
@@ -423,7 +401,6 @@ int exec_process(json_t * config)
 			err = 1;
 			goto cleanup;
 		}
-		json_decref(value);
 
 		execvpe(path, argv, env);
 		perror("execvpe");
@@ -436,12 +413,6 @@ int exec_process(json_t * config)
 	}
 
  cleanup:
-	if (process) {
-		json_decref(process);
-	}
-	if (value) {
-		json_decref(value);
-	}
 	if (argv) {
 		for (i = 0; argv[i] != NULL; i++) {
 			free(argv[i]);
@@ -542,7 +513,7 @@ ssize_t getline_fd(char **buf, size_t * n, int fd)
 char **json_array_of_strings_value(json_t * array)
 {
 	char **a = NULL;
-	json_t *value = NULL;
+	json_t *value;
 	size_t i;
 	int err = 0;
 
