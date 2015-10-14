@@ -1,3 +1,4 @@
+#define _GNU_SOURCE
 #include <stdio.h>
 #include <stdlib.h>
 #include <sched.h>
@@ -33,6 +34,7 @@ int set_working_directory(json_t * config);
 int set_user_group(json_t * config);
 int exec_process(json_t * config);
 void block_forever();
+int get_clone_flags(json_t *config, unsigned long *flags);
 int _wait(pid_t pid);
 ssize_t getline_fd(char **buf, size_t * n, int fd);
 char **json_array_of_strings_value(json_t * array);
@@ -119,6 +121,10 @@ int run_container(json_t * config)
 	unsigned long flags = SIGCHLD;
 	pid_t cpid;
 	int err = 0;
+
+	if (get_clone_flags(config, &flags)) {
+		return 1;
+	}
 
 	if (pipe(pipe_in) == -1) {
 		perror("pipe");
@@ -564,6 +570,42 @@ void block_forever()
 	sigsuspend(&mask);
 	perror("sigsuspend");
 	return;
+}
+
+int get_clone_flags(json_t * config, unsigned long *flags)
+{
+	json_t *namespace, *value, *path;
+	const char *key;
+
+	namespace = json_object_get(config, "namespaces");
+	if (!namespace) {
+		return 0;
+	}
+
+	json_object_foreach(namespace, key, value) {
+		path = json_object_get(value, "path");
+		if (path) {
+			continue;
+		}
+		if (strncmp("mount", key, strlen("mount") + 1) == 0) {
+			*flags |= CLONE_NEWNS;
+		} else if (strncmp("uts", key, strlen("uts") + 1) == 0) {
+			*flags |= CLONE_NEWUTS;
+		} else if (strncmp("ipc", key, strlen("ipc") + 1) == 0) {
+			*flags |= CLONE_NEWIPC;
+		} else if (strncmp("net", key, strlen("net") + 1) == 0) {
+			*flags |= CLONE_NEWNET;
+		} else if (strncmp("pid", key, strlen("pid") + 1) == 0) {
+			*flags |= CLONE_NEWPID;
+		} else if (strncmp("user", key, strlen("user") + 1) == 0) {
+			*flags |= CLONE_NEWUSER;
+		} else {
+			fprintf(stderr, "unrecognized namespace '%s'\n", key);
+			return 1;
+		}
+	}
+
+	return 0;
 }
 
 int _wait(pid_t pid)
