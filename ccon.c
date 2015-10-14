@@ -18,6 +18,7 @@ int validate_version(json_t * config);
 int run_container(json_t * config);
 int handle_parent(json_t * config, pid_t cpid, int *to_child, int *from_child);
 int handle_child(json_t * config, int *to_parent, int *from_parent);
+int set_user_group(json_t * config);
 int exec_process(json_t * config);
 void block_forever();
 int _wait(pid_t pid);
@@ -261,11 +262,107 @@ int handle_child(json_t * config, int *to_parent, int *from_parent)
 	}
 	*from_parent = -1;
 
+	err = set_user_group(config);
+	if (err) {
+		goto cleanup;
+	}
+
 	err = exec_process(config);
 
  cleanup:
 	if (line != NULL) {
 		free(line);
+	}
+	return err;
+}
+
+int set_user_group(json_t * config)
+{
+	uid_t uid;
+	gid_t gid, *groups = NULL;
+	json_t *process = NULL, *user = NULL, *v1 = NULL, *v2 = NULL;
+	size_t i, n = 0;
+	int err = 0;
+
+	process = json_object_get(config, "process");
+	if (!process) {
+		return 0;
+	}
+
+	user = json_object_get(process, "user");
+	if (!user) {
+		goto cleanup;
+	}
+
+	v1 = json_object_get(user, "gid");
+	if (v1) {
+		gid = (gid_t) json_integer_value(v1);
+		fprintf(stderr, "set GID to %d\n", (int)gid);
+		if (setgid(gid) == -1) {
+			perror("setgid");
+			err = 1;
+			goto cleanup;
+		}
+		json_decref(v1);
+	}
+
+	v1 = json_object_get(user, "additionalGids");
+	if (v1) {
+		n = json_array_size(v1);
+		groups = malloc(sizeof(gid_t) * n);
+		if (!groups) {
+			perror("malloc");
+			err = 1;
+			goto cleanup;
+		}
+		json_array_foreach(v1, i, v2) {
+			groups[i] = (gid_t) json_integer_value(v2);
+		}
+		json_decref(v1);
+		v1 = NULL;
+		fprintf(stderr, "set additional GIDs to [");
+		for (i = 0; i < n; i++) {
+			fprintf(stderr, "%d", (int)groups[i]);
+			if (i < n - 1) {
+				fprintf(stderr, ", ");
+			}
+		}
+		fprintf(stderr, "]\n");
+		if (setgroups(n, groups) == -1) {
+			perror("setgroups");
+			err = 1;
+			goto cleanup;
+		}
+		free(groups);
+		groups = NULL;
+	}
+
+	v1 = json_object_get(user, "uid");
+	if (v1) {
+		uid = (uid_t) json_integer_value(v1);
+		fprintf(stderr, "set UID to %d\n", (int)uid);
+		if (setuid(uid) == -1) {
+			perror("setuid");
+			err = 1;
+			goto cleanup;
+		}
+		json_decref(v1);
+	}
+
+	return 0;
+
+ cleanup:
+	if (process) {
+		json_decref(process);
+	}
+	if (user) {
+		json_decref(user);
+	}
+	if (v1) {
+		json_decref(v1);
+	}
+	if (groups) {
+		free(groups);
 	}
 	return err;
 }
