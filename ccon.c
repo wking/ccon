@@ -32,6 +32,7 @@
 #define STACK_SIZE (1024 * 1024)
 
 /* messages passed between the host and container */
+#define USER_NAMESPACE_MAPPING_COMPLETE "user-namespace-mapping-complete\n"
 #define CONTAINER_SETUP_COMPLETE "container-setup-complete\n"
 #define EXEC_PROCESS "exec-process\n"
 
@@ -56,6 +57,10 @@ void block_forever();
 int get_namespace_type(const char *name, int *nstype);
 int get_clone_flags(json_t * config, unsigned long *flags);
 int join_namespaces(json_t * config);
+int set_user_namespace_mappings(json_t * config, pid_t cpid);
+int set_user_map(json_t * user, pid_t cpid, const char *key,
+		 const char *filename);
+int set_user_setgroups(json_t * user, pid_t cpid);
 int _wait(pid_t pid);
 ssize_t getline_fd(char **buf, size_t * n, int fd);
 char **json_array_of_strings_value(json_t * array);
@@ -227,6 +232,18 @@ int handle_parent(json_t * config, pid_t cpid, int *to_child, int *from_child)
 	size_t allocated = 0, len;
 	int err = 0;
 
+	if (set_user_namespace_mappings(config, cpid)) {
+		return 1;
+	}
+
+	line = USER_NAMESPACE_MAPPING_COMPLETE;
+	len = strlen(line);
+	if (write(*to_child, line, len) != len) {
+		perror("write to container");
+		return 1;
+	}
+	line = NULL;
+
 	len = getline_fd(&line, &allocated, *from_child);
 	if (len == -1) {
 		err = 1;
@@ -244,9 +261,8 @@ int handle_parent(json_t * config, pid_t cpid, int *to_child, int *from_child)
 
 	if (close(*from_child) == -1) {
 		perror("close container-to-host pipe read-end");
-		err = 1;
 		*from_child = -1;
-		goto cleanup;
+		return 1;
 	}
 	*from_child = -1;
 
@@ -331,6 +347,22 @@ int handle_child(json_t * config, int *to_parent, int *from_parent)
 	char *line = NULL;
 	size_t allocated = 0, len;
 	int err = 0;
+
+	len = getline_fd(&line, &allocated, *from_parent);
+	if (len == -1) {
+		err = 1;
+		goto cleanup;
+	}
+	if (strncmp
+	    (USER_NAMESPACE_MAPPING_COMPLETE, line,
+	     strlen(USER_NAMESPACE_MAPPING_COMPLETE)) != 0) {
+		fprintf(stderr, "unexpected message from container(%d): %.*s\n",
+			(int)len, (int)len - 1, line);
+		goto cleanup;
+	}
+	free(line);
+	allocated = 0;
+	line = NULL;
 
 	if (join_namespaces(config)) {
 		return 1;
@@ -684,6 +716,180 @@ int join_namespaces(json_t * config)
 	}
 
 	return 0;
+}
+
+int set_user_namespace_mappings(json_t * config, pid_t cpid)
+{
+	json_t *namespace, *user, *v1, *v2;
+
+	namespace = json_object_get(config, "namespaces");
+	if (!namespace) {
+		return 0;
+	}
+
+	user = json_object_get(namespace, "user");
+	if (!user) {
+		return 0;
+	}
+
+	if (set_user_map(user, cpid, "uidMappings", "uid_map")) {
+		return 1;
+	}
+
+	if (set_user_setgroups(user, cpid)) {
+		return 1;
+	}
+
+	if (set_user_map(user, cpid, "gidMappings", "gid_map")) {
+		return 1;
+	}
+
+	return 0;
+}
+
+int set_user_map(json_t * user, pid_t cpid, const char *key,
+		 const char *filename)
+{
+	json_t *mappings, *mapping, *value;
+	char path[80];
+	size_t i;
+	uid_t host, container;
+	int err = 0, fd = -1, size;
+
+	mappings = json_object_get(user, key);
+	if (!mappings) {
+		return 0;
+	}
+
+	size =
+	    snprintf(path, 80, "/proc/%lu/%s", (unsigned long int)cpid,
+		     filename);
+	if (size < 0) {
+		fprintf(stderr, "failed to format /proc/%lu/%s\n",
+			(unsigned long int)cpid, filename);
+		return 1;
+	}
+	if (size >= 80) {
+		fprintf(stderr,
+			"failed to format /proc/%lu/%s (needed a buffer with %d bytes)\n",
+			(unsigned long int)cpid, filename, size);
+		return 1;
+	}
+
+	fd = open(path, O_WRONLY);
+	if (fd == -1) {
+		perror("open");
+		return 1;
+	}
+
+	json_array_foreach(mappings, i, mapping) {
+		value = json_object_get(mapping, "containerID");
+		if (!value) {
+			fprintf(stderr,
+				"failed to get namespaces.user.%s[%d].containerID\n",
+				key, (int)i);
+			err = 1;
+			goto cleanup;
+		}
+		container = json_integer_value(value);
+
+		value = json_object_get(mapping, "hostID");
+		if (!value) {
+			fprintf(stderr,
+				"failed to get namespaces.user.%s[%d].hostID\n",
+				key, (int)i);
+			err = 1;
+			goto cleanup;
+		}
+		host = json_integer_value(value);
+
+		value = json_object_get(mapping, "size");
+		if (!value) {
+			fprintf(stderr,
+				"failed to get namespaces.user.%s[%d].size\n",
+				key, (int)i);
+			err = 1;
+			goto cleanup;
+		}
+		size = json_integer_value(value);
+
+		fprintf(stderr, "write '%u %u %d' to %s\n",
+			(unsigned int)container, (unsigned int)host, size,
+			path);
+		if (dprintf
+		    (fd, "%u %u %d\n", (unsigned int)container,
+		     (unsigned int)host, size) < 0) {
+			fprintf(stderr, "failed to write '%u %u %d' to %s\n",
+				(unsigned int)container, (unsigned int)host,
+				size, path);
+			err = 1;
+			goto cleanup;
+		}
+	}
+
+ cleanup:
+	if (fd >= 0) {
+		if (close(fd) == -1) {
+			perror("close");
+			err = 1;
+		}
+	}
+	return err;
+}
+
+int set_user_setgroups(json_t * user, pid_t cpid)
+{
+	json_t *setgroups;
+	const char *value;
+	char path[80];
+	int err = 0, fd = -1, size;
+
+	setgroups = json_object_get(user, "setgroups");
+	if (!setgroups) {
+		return 0;
+	}
+
+	if (json_boolean_value(setgroups)) {
+		value = "allow";
+	} else {
+		value = "deny";
+	}
+
+	size =
+	    snprintf(path, 80, "/proc/%lu/setgroups", (unsigned long int)cpid);
+	if (size < 0) {
+		fprintf(stderr, "failed to format /proc/%lu/setgroups\n",
+			(unsigned long int)cpid);
+		return 1;
+	}
+	if (size >= 80) {
+		fprintf(stderr,
+			"failed to format /proc/%lu/setgroups (needed a buffer with %d bytes)\n",
+			(unsigned long int)cpid, size);
+		return 1;
+	}
+
+	fprintf(stderr, "write '%s' to %s\n", value, path);
+	fd = open(path, O_WRONLY);
+	if (fd == -1) {
+		perror("open");
+		return 1;
+	}
+
+	if (write(fd, value, strlen(value)) == -1) {
+		perror("write");
+		err = 1;
+		goto cleanup;
+	}
+
+ cleanup:
+	if (fd >= 0) {
+		if (close(fd) == -1) {
+			perror("close");
+			err = 1;
+		}
+	}
+	return err;
 }
 
 int _wait(pid_t pid)
