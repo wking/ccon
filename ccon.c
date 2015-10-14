@@ -52,7 +52,8 @@ int set_working_directory(json_t * config);
 int set_user_group(json_t * config);
 int exec_process(json_t * config);
 void block_forever();
-int get_clone_flags(json_t *config, unsigned long *flags);
+int get_namespace_type(const char *name, int *nstype);
+int get_clone_flags(json_t * config, unsigned long *flags);
 int _wait(pid_t pid);
 ssize_t getline_fd(char **buf, size_t * n, int fd);
 char **json_array_of_strings_value(json_t * array);
@@ -590,10 +591,33 @@ void block_forever()
 	return;
 }
 
+int get_namespace_type(const char *name, int *nstype)
+{
+	if (strncmp("mount", name, strlen("mount") + 1) == 0) {
+		*nstype = CLONE_NEWNS;
+	} else if (strncmp("uts", name, strlen("uts") + 1) == 0) {
+		*nstype = CLONE_NEWUTS;
+	} else if (strncmp("ipc", name, strlen("ipc") + 1) == 0) {
+		*nstype = CLONE_NEWIPC;
+	} else if (strncmp("net", name, strlen("net") + 1) == 0) {
+		*nstype = CLONE_NEWNET;
+	} else if (strncmp("pid", name, strlen("pid") + 1) == 0) {
+		*nstype = CLONE_NEWPID;
+	} else if (strncmp("user", name, strlen("user") + 1) == 0) {
+		*nstype = CLONE_NEWUSER;
+	} else {
+		fprintf(stderr, "unrecognized namespace '%s'\n", name);
+		return 1;
+	}
+
+	return 0;
+}
+
 int get_clone_flags(json_t * config, unsigned long *flags)
 {
 	json_t *namespace, *value, *path;
 	const char *key;
+	int nstype;
 
 	namespace = json_object_get(config, "namespaces");
 	if (!namespace) {
@@ -605,22 +629,10 @@ int get_clone_flags(json_t * config, unsigned long *flags)
 		if (path) {
 			continue;
 		}
-		if (strncmp("mount", key, strlen("mount") + 1) == 0) {
-			*flags |= CLONE_NEWNS;
-		} else if (strncmp("uts", key, strlen("uts") + 1) == 0) {
-			*flags |= CLONE_NEWUTS;
-		} else if (strncmp("ipc", key, strlen("ipc") + 1) == 0) {
-			*flags |= CLONE_NEWIPC;
-		} else if (strncmp("net", key, strlen("net") + 1) == 0) {
-			*flags |= CLONE_NEWNET;
-		} else if (strncmp("pid", key, strlen("pid") + 1) == 0) {
-			*flags |= CLONE_NEWPID;
-		} else if (strncmp("user", key, strlen("user") + 1) == 0) {
-			*flags |= CLONE_NEWUSER;
-		} else {
-			fprintf(stderr, "unrecognized namespace '%s'\n", key);
+		if (get_namespace_type(key, &nstype)) {
 			return 1;
 		}
+		*flags |= nstype;
 	}
 
 	return 0;
