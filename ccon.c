@@ -18,6 +18,7 @@ int validate_version(json_t * config);
 int run_container(json_t * config);
 int handle_parent(json_t * config, pid_t cpid, int *to_child, int *from_child);
 int handle_child(json_t * config, int *to_parent, int *from_parent);
+int set_working_directory(json_t * config);
 int set_user_group(json_t * config);
 int exec_process(json_t * config);
 void block_forever();
@@ -256,6 +257,11 @@ int handle_child(json_t * config, int *to_parent, int *from_parent)
 	}
 	*from_parent = -1;
 
+	err = set_working_directory(config);
+	if (err) {
+		goto cleanup;
+	}
+
 	err = set_user_group(config);
 	if (err) {
 		goto cleanup;
@@ -268,6 +274,35 @@ int handle_child(json_t * config, int *to_parent, int *from_parent)
 		free(line);
 	}
 	return err;
+}
+
+int set_working_directory(json_t * config)
+{
+	const char *path;
+	json_t *process, *cwd;
+
+	process = json_object_get(config, "process");
+	if (!process) {
+		return 0;
+	}
+
+	cwd = json_object_get(process, "cwd");
+	if (!cwd) {
+		return 0;
+	}
+
+	path = json_string_value(cwd);
+	if (!path) {
+		return 0;
+	}
+
+	fprintf(stderr, "change working directory to %s\n", path);
+	if (chdir(path) == -1) {
+		perror("chdir");
+		return 1;
+	}
+
+	return 0;
 }
 
 int set_user_group(json_t * config)
