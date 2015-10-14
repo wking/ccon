@@ -10,6 +10,7 @@
 
 /* messages passed between the host and container */
 #define CONTAINER_SETUP_COMPLETE "container-setup-complete\n"
+#define EXEC_PROCESS "exec-process\n"
 
 extern char **environ;
 
@@ -189,8 +190,20 @@ int handle_parent(json_t * config, pid_t cpid, int *to_child, int *from_child)
 	size_t allocated = 0, len;
 	int err = 0;
 
-	line = CONTAINER_SETUP_COMPLETE;
-	len = strlen(line);
+	len = getline_fd(&line, &allocated, *from_child);
+	if (len == -1) {
+		err = 1;
+		goto cleanup;
+	}
+	if (strncmp
+	    (CONTAINER_SETUP_COMPLETE, line,
+	     strlen(CONTAINER_SETUP_COMPLETE)) != 0) {
+		fprintf(stderr, "unexpected message from container(%d): %.*s\n",
+			(int)len, (int)len - 1, line);
+		goto cleanup;
+	}
+	free(line);
+	line = NULL;
 
 	if (close(*from_child) == -1) {
 		perror("close container-to-host pipe read-end");
@@ -200,6 +213,10 @@ int handle_parent(json_t * config, pid_t cpid, int *to_child, int *from_child)
 	}
 	*from_child = -1;
 
+	/* TODO: run pre-start hooks */
+
+	line = EXEC_PROCESS;
+	len = strlen(line);
 	if (write(*to_child, line, len) != len) {
 		perror("write to container");
 		return 1;
@@ -228,29 +245,39 @@ int handle_child(json_t * config, int *to_parent, int *from_parent)
 	size_t allocated = 0, len;
 	int err = 0;
 
+	line = CONTAINER_SETUP_COMPLETE;
+	len = strlen(line);
+	if (write(*to_parent, line, len) != len) {
+		perror("write to host");
+		line = NULL;	// don't free a string literal
+		err = 1;
+		goto cleanup;
+	}
+	line = NULL;
+
 	if (close(*to_parent) == -1) {
-		perror("close host-to-container pipe read-end");
+		perror("close container-to-host pipe write-end");
 		err = 1;
 		*to_parent = -1;
 		goto cleanup;
 	}
 	*to_parent = -1;
 
+	/* block while parent runs pre-start hooks */
+
 	len = getline_fd(&line, &allocated, *from_parent);
 	if (len == -1) {
 		err = 1;
 		goto cleanup;
 	}
-	if (strncmp
-	    (CONTAINER_SETUP_COMPLETE, line,
-	     strlen(CONTAINER_SETUP_COMPLETE)) != 0) {
+	if (strncmp(EXEC_PROCESS, line, strlen(EXEC_PROCESS)) != 0) {
 		fprintf(stderr, "unexpected message from host(%d): %.*s\n",
 			(int)len, (int)len - 1, line);
 		goto cleanup;
 	}
 
 	if (close(*from_parent) == -1) {
-		perror("close container-to-host pipe read-end");
+		perror("close host-to-container pipe read-end");
 		err = 1;
 		*from_parent = -1;
 		goto cleanup;
