@@ -19,6 +19,7 @@
 #define _GNU_SOURCE
 #include <stdio.h>
 #include <stdlib.h>
+#include <fcntl.h>
 #include <sched.h>
 #include <signal.h>
 #include <string.h>
@@ -54,6 +55,7 @@ int exec_process(json_t * config);
 void block_forever();
 int get_namespace_type(const char *name, int *nstype);
 int get_clone_flags(json_t * config, unsigned long *flags);
+int join_namespaces(json_t * config);
 int _wait(pid_t pid);
 ssize_t getline_fd(char **buf, size_t * n, int fd);
 char **json_array_of_strings_value(json_t * array);
@@ -329,6 +331,10 @@ int handle_child(json_t * config, int *to_parent, int *from_parent)
 	char *line = NULL;
 	size_t allocated = 0, len;
 	int err = 0;
+
+	if (join_namespaces(config)) {
+		return 1;
+	}
 
 	line = CONTAINER_SETUP_COMPLETE;
 	len = strlen(line);
@@ -633,6 +639,48 @@ int get_clone_flags(json_t * config, unsigned long *flags)
 			return 1;
 		}
 		*flags |= nstype;
+	}
+
+	return 0;
+}
+
+int join_namespaces(json_t * config)
+{
+	json_t *namespace, *value, *path;
+	const char *key, *p;
+	int fd, nstype;
+
+	namespace = json_object_get(config, "namespaces");
+	if (!namespace) {
+		return 0;
+	}
+
+	json_object_foreach(namespace, key, value) {
+		path = json_object_get(value, "path");
+		if (!path) {
+			continue;
+		}
+		p = json_string_value(path);
+		if (get_namespace_type(key, &nstype)) {
+			return 1;
+		}
+		fprintf(stderr, "join %s namespace at %s\n", key, p);
+		fd = open(p, O_RDONLY);
+		if (fd == -1) {
+			perror("open");
+			return 1;
+		}
+		if (setns(fd, nstype) == -1) {
+			perror("setns");
+			if (close(fd) == -1) {
+				perror("close");
+			}
+			return 1;
+		}
+		if (close(fd) == -1) {
+			perror("close");
+			return 1;
+		}
 	}
 
 	return 0;
