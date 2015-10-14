@@ -1,5 +1,6 @@
 #include <stdio.h>
 #include <stdlib.h>
+#include <sched.h>
 #include <signal.h>
 #include <string.h>
 #include <unistd.h>
@@ -8,9 +9,17 @@
 
 #include <jansson.h>
 
+#define STACK_SIZE (1024 * 1024)
+
 /* messages passed between the host and container */
 #define CONTAINER_SETUP_COMPLETE "container-setup-complete\n"
 #define EXEC_PROCESS "exec-process\n"
+
+typedef struct child_func_args {
+	json_t *config;
+	int pipe_in[2];
+	int pipe_out[2];
+} child_func_args_t;
 
 extern char **environ;
 
@@ -18,6 +27,7 @@ int validate_config(json_t * config);
 int validate_version(json_t * config);
 int run_container(json_t * config);
 int handle_parent(json_t * config, pid_t cpid, int *to_child, int *from_child);
+int child_func(void *arg);
 int handle_child(json_t * config, int *to_parent, int *from_parent);
 int set_working_directory(json_t * config);
 int set_user_group(json_t * config);
@@ -103,7 +113,10 @@ int validate_version(json_t * config)
 
 int run_container(json_t * config)
 {
+	child_func_args_t child_args;
+	char *stack = NULL, *stack_top;
 	int pipe_in[2], pipe_out[2];
+	unsigned long flags = SIGCHLD;
 	pid_t cpid;
 	int err = 0;
 
@@ -118,47 +131,41 @@ int run_container(json_t * config)
 		goto cleanup;
 	}
 
-	cpid = fork();
+	child_args.config = config;
+	child_args.pipe_in[0] = pipe_in[0];
+	child_args.pipe_in[1] = pipe_in[1];
+	child_args.pipe_out[0] = pipe_out[0];
+	child_args.pipe_out[1] = pipe_out[1];
+
+	stack = malloc(STACK_SIZE);
+	if (!stack) {
+		perror("malloc");
+		err = 1;
+		goto cleanup;
+	}
+	stack_top = stack + STACK_SIZE;	/* assume stack grows downward */
+
+	cpid = clone(&child_func, stack_top, flags, &child_args);
 	if (cpid == -1) {
-		perror("fork");
+		perror("clone");
 		err = 1;
 		goto cleanup;
 	}
 
-	if (cpid == 0) {	/* child */
-		if (close(pipe_in[1]) == -1) {
-			perror("close host-to-container pipe write-end");
-			pipe_in[1] = -1;
-			goto cleanup;
-		}
-		pipe_in[1] = -1;
-		if (close(pipe_out[0]) == -1) {
-			perror("close container-to-host pipe read-end");
-			pipe_out[0] = -1;
-			goto cleanup;
-		}
-		pipe_out[0] = -1;
-		err = handle_child(config, &pipe_out[1], &pipe_in[0]);
-		if (err) {
-			fprintf(stderr, "child failed\n");
-		}
-	} else {		/* parent */
-		fprintf(stderr, "launched container process with PID %d\n",
-			cpid);
-		if (close(pipe_in[0]) == -1) {
-			perror("close host-to-container pipe read-end");
-			pipe_in[0] = -1;
-			goto cleanup;
-		}
+	fprintf(stderr, "launched container process with PID %d\n", cpid);
+	if (close(pipe_in[0]) == -1) {
+		perror("close host-to-container pipe read-end");
 		pipe_in[0] = -1;
-		if (close(pipe_out[1]) == -1) {
-			perror("close container-to-host pipe write-end");
-			pipe_out[1] = -1;
-			goto cleanup;
-		}
-		pipe_out[1] = -1;
-		err = handle_parent(config, cpid, &pipe_in[1], &pipe_out[0]);
+		goto cleanup;
 	}
+	pipe_in[0] = -1;
+	if (close(pipe_out[1]) == -1) {
+		perror("close container-to-host pipe write-end");
+		pipe_out[1] = -1;
+		goto cleanup;
+	}
+	pipe_out[1] = -1;
+	err = handle_parent(config, cpid, &pipe_in[1], &pipe_out[0]);
 
  cleanup:
 	if (pipe_in[0] >= 0) {
@@ -180,6 +187,9 @@ int run_container(json_t * config)
 		if (close(pipe_out[1]) == -1) {
 			perror("close container-to-host pipe write-end");
 		}
+	}
+	if (stack) {
+		free(stack);
 	}
 	return err;
 }
@@ -235,6 +245,56 @@ int handle_parent(json_t * config, pid_t cpid, int *to_child, int *from_child)
  cleanup:
 	if (line != NULL) {
 		free(line);
+	}
+	return err;
+}
+
+int child_func(void *arg)
+{
+	child_func_args_t *child_args = (child_func_args_t *) arg;
+	int err = 0;
+
+	if (close(child_args->pipe_in[1]) == -1) {
+		perror("close host-to-container pipe write-end");
+		child_args->pipe_in[1] = -1;
+		err = 1;
+		goto cleanup;
+	}
+	child_args->pipe_in[1] = -1;
+	if (close(child_args->pipe_out[0]) == -1) {
+		perror("close container-to-host pipe read-end");
+		child_args->pipe_out[0] = -1;
+		err = 1;
+		goto cleanup;
+	}
+	child_args->pipe_out[0] = -1;
+	err =
+	    handle_child(child_args->config, &child_args->pipe_out[1],
+			 &child_args->pipe_in[0]);
+	if (err) {
+		fprintf(stderr, "child failed\n");
+	}
+
+ cleanup:
+	if (child_args->pipe_in[0] >= 0) {
+		if (close(child_args->pipe_in[0]) == -1) {
+			perror("close host-to-container pipe read-end");
+		}
+	}
+	if (child_args->pipe_in[1] >= 0) {
+		if (close(child_args->pipe_in[1]) == -1) {
+			perror("close host-to-container pipe write-end");
+		}
+	}
+	if (child_args->pipe_out[0] >= 0) {
+		if (close(child_args->pipe_out[0]) == -1) {
+			perror("close container-to-host pipe read-end");
+		}
+	}
+	if (child_args->pipe_out[1] >= 0) {
+		if (close(child_args->pipe_out[1]) == -1) {
+			perror("close container-to-host pipe write-end");
+		}
 	}
 	return err;
 }
