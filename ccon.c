@@ -24,6 +24,7 @@
 #include <signal.h>
 #include <string.h>
 #include <unistd.h>
+#include <sys/mount.h>
 #include <sys/types.h>
 #include <sys/wait.h>
 
@@ -62,6 +63,8 @@ int set_user_namespace_mappings(json_t * config, pid_t cpid);
 int set_user_map(json_t * user, pid_t cpid, const char *key,
 		 const char *filename);
 int set_user_setgroups(json_t * user, pid_t cpid);
+int get_mount_flag(const char *name, unsigned long *flag);
+int handle_mounts(json_t * config);
 int _wait(pid_t pid);
 ssize_t getline_fd(char **buf, size_t * n, int fd);
 char **json_array_of_strings_value(json_t * array);
@@ -366,6 +369,10 @@ int handle_child(json_t * config, int *to_parent, int *from_parent)
 	line = NULL;
 
 	if (join_namespaces(config)) {
+		return 1;
+	}
+
+	if (handle_mounts(config)) {
 		return 1;
 	}
 
@@ -892,6 +899,215 @@ int set_user_setgroups(json_t * user, pid_t cpid)
 		}
 	}
 	return err;
+}
+
+int get_mount_flag(const char *name, unsigned long *flag)
+{
+	if (strncmp("MS_BIND", name, strlen("MS_BIND") + 1) == 0) {
+		*flag = MS_BIND;
+	} else if (strncmp("MS_DIRSYNC", name, strlen("MS_DIRSYNC") + 1) == 0) {
+		*flag = MS_DIRSYNC;
+	} else if (strncmp("MS_I_VERSION", name, strlen("MS_I_VERSION") + 1) ==
+		   0) {
+		*flag = MS_I_VERSION;
+#ifdef MS_LAZYTIME
+	} else if (strncmp("MS_LAZYTIME", name, strlen("MS_LAZYTIME") + 1) == 0) {
+		*flag = MS_LAZYTIME;
+#endif
+	} else if (strncmp("MS_MANDLOCK", name, strlen("MS_MANDLOCK") + 1) == 0) {
+		*flag = MS_MANDLOCK;
+	} else if (strncmp("MS_MOVE", name, strlen("MS_MOVE") + 1) == 0) {
+		*flag = MS_MOVE;
+	} else if (strncmp("MS_NOATIME", name, strlen("MS_NOATIME") + 1) == 0) {
+		*flag = MS_NOATIME;
+	} else if (strncmp("MS_NODEV", name, strlen("MS_NODEV") + 1) == 0) {
+		*flag = MS_NODEV;
+	} else if (strncmp("MS_NODIRATIME", name, strlen("MS_NODIRATIME") + 1)
+		   == 0) {
+		*flag = MS_NODIRATIME;
+	} else if (strncmp("MS_NOEXEC", name, strlen("MS_NOEXEC") + 1) == 0) {
+		*flag = MS_NOEXEC;
+	} else if (strncmp("MS_NOSUID", name, strlen("MS_NOSUID") + 1) == 0) {
+		*flag = MS_NOSUID;
+	} else if (strncmp("MS_PRIVATE", name, strlen("MS_PRIVATE") + 1) == 0) {
+		*flag = MS_PRIVATE;
+	} else if (strncmp("MS_RDONLY", name, strlen("MS_RDONLY") + 1) == 0) {
+		*flag = MS_RDONLY;
+	} else if (strncmp("MS_REC", name, strlen("MS_REC") + 1) == 0) {
+		*flag = MS_REC;
+	} else if (strncmp("MS_RELATIME", name, strlen("MS_RELATIME") + 1) == 0) {
+		*flag = MS_RELATIME;
+	} else if (strncmp("MS_REMOUNT", name, strlen("MS_REMOUNT") + 1) == 0) {
+		*flag = MS_REMOUNT;
+	} else if (strncmp("MS_SHARED", name, strlen("MS_SHARED") + 1) == 0) {
+		*flag = MS_SHARED;
+	} else if (strncmp("MS_SILENT", name, strlen("MS_SILENT") + 1) == 0) {
+		*flag = MS_SILENT;
+	} else if (strncmp("MS_SLAVE", name, strlen("MS_SLAVE") + 1) == 0) {
+		*flag = MS_SLAVE;
+	} else if (strncmp("MS_STRICTATIME", name, strlen("MS_STRICTATIME") + 1)
+		   == 0) {
+		*flag = MS_STRICTATIME;
+#ifdef MS_SYNC
+	} else if (strncmp("MS_SYNC", name, strlen("MS_SYNC") + 1) == 0) {
+		*flag = MS_SYNC;
+#endif
+	} else if (strncmp("MS_SYNCHRONOUS", name, strlen("MS_SYNCHRONOUS") + 1)
+		   == 0) {
+		*flag = MS_SYNCHRONOUS;
+	} else if (strncmp("MS_UNBINDABLE", name, strlen("MS_UNBINDABLE") + 1)
+		   == 0) {
+		*flag = MS_UNBINDABLE;
+#ifdef MS_VERBOSE
+	} else if (strncmp("MS_VERBOSE", name, strlen("MS_VERBOSE") + 1) == 0) {
+		*flag = MS_VERBOSE;
+#endif
+	} else {
+		fprintf(stderr, "unrecognized mount flag '%s'\n", name);
+		return 1;
+	}
+
+	return 0;
+}
+
+int handle_mounts(json_t * config)
+{
+	json_t *namespaces, *mt_ns, *mounts, *mt, *v1, *v2;
+	const char *source, *target, *type, *data, *flag;
+	char cwd[MAX_PATH], full_source[MAX_PATH], full_target[MAX_PATH];
+	unsigned long flags, f;
+	size_t i, j;
+	int size;
+
+	namespaces = json_object_get(config, "namespaces");
+	if (!namespaces) {
+		return 0;
+	}
+
+	mt_ns = json_object_get(namespaces, "mount");
+	if (!mt_ns) {
+		return 0;
+	}
+
+	mounts = json_object_get(mt_ns, "mounts");
+	if (!mounts) {
+		return 0;
+	}
+
+	if (!getcwd(cwd, MAX_PATH)) {
+		perror("getcwd");
+		return 1;
+	}
+	if (cwd[0] != '/') {
+		fprintf(stderr,
+			"current working directory is unreachable: %s\n", cwd);
+		return 1;
+	}
+
+	json_array_foreach(mounts, i, mt) {
+		source = target = type = data = NULL;
+		v1 = json_object_get(mt, "source");
+		if (v1) {
+			source = json_string_value(v1);
+			if (source[0] == '/') {
+				if (strlen(source) >= MAX_PATH) {
+					fprintf(stderr,
+						"mount path %s is too long (%d >= %d)\n",
+						source, (int)strlen(source),
+						MAX_PATH);
+					return 1;
+				}
+				memcpy(full_source, source, strlen(source));
+			} else {
+				size =
+				    snprintf(full_source, MAX_PATH, "%s/%s",
+					     cwd, source);
+				if (size < 0) {
+					fprintf(stderr,
+						"failed to format %s/%s\n", cwd,
+						source);
+					return 1;
+				}
+				if (size >= MAX_PATH) {
+					fprintf(stderr,
+						"failed to format %s/%s (needed a buffer with %d bytes)\n",
+						cwd, source, size);
+					return 1;
+				}
+				source = full_source;
+			}
+		}
+
+		v1 = json_object_get(mt, "target");
+		if (v1) {
+			target = json_string_value(v1);
+			if (target[0] == '/') {
+				if (strlen(target) >= MAX_PATH) {
+					fprintf(stderr,
+						"mount path %s is too long (%d >= %d)\n",
+						target, (int)strlen(target),
+						MAX_PATH);
+					return 1;
+				}
+			} else {
+				size =
+				    snprintf(full_target, MAX_PATH, "%s/%s",
+					     cwd, target);
+				if (size < 0) {
+					fprintf(stderr,
+						"failed to format %s/%s\n", cwd,
+						target);
+					return 1;
+				}
+				if (size >= MAX_PATH) {
+					fprintf(stderr,
+						"failed to format %s/%s (needed a buffer with %d bytes)\n",
+						cwd, target, size);
+					return 1;
+				}
+				target = full_target;
+			}
+		}
+
+		v1 = json_object_get(mt, "type");
+		if (v1) {
+			type = json_string_value(v1);
+		}
+
+		v1 = json_object_get(mt, "data");
+		if (v1) {
+			data = json_string_value(v1);
+		}
+
+		flags = 0;
+		v1 = json_object_get(mt, "flags");
+		if (v1) {
+			json_array_foreach(v1, j, v2) {
+				flag = json_string_value(v2);
+				if (!flag) {
+					fprintf(stderr,
+						"failed to extract namespaces.mount.mounts[%d].flags[%d]\n",
+						(int)i, (int)j);
+					return 1;
+				}
+				if (get_mount_flag(flag, &f)) {
+					return 1;
+				}
+				flags |= f;
+			}
+		}
+
+		fprintf(stderr,
+			"mount %lu: %s to %s (type: %s, flags: %lu, data %s)\n",
+			(unsigned long int)i, source, target, type, flags,
+			data);
+		if (mount(source, target, type, flags, data) == -1) {
+			perror("mount");
+			return 1;
+		}
+	}
+
+	return 0;
 }
 
 int _wait(pid_t pid)
