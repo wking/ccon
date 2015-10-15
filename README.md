@@ -22,6 +22,7 @@ about what a container should look like.
   * [Process](#process)
     * [User](#user)
     * [Current working directory](#current-working-directory)
+    * [Capabilities](#capabilities)
     * [Arguments](#arguments)
     * [Path](#path)
     * [Environment variables](#environment-variables)
@@ -391,6 +392,26 @@ Change to a different directory before executing the configured code.
 "cwd": "/root"
 ```
 
+#### Capabilities
+
+Define the minimum set of [capabilities][capabilities.7] required for
+the container process.  All other capabilities are dropped from all
+capabilities sets, including the bounding set, before executing the
+configured code.
+
+* **`capabilities`** (optional, array of strings) Set of
+  [`CAP_*`][capabilities.7] flags to set.
+
+If unset, the container process will continue with the caller's
+capabilities (potentially increased in a child [user
+namespace][user_namespaces.7]).
+
+##### Example
+
+```json
+"cwd": "/root"
+```
+
 #### Arguments
 
 The command that the container process executes after container setup
@@ -462,6 +483,8 @@ Which will set `PATH` and `TERM`.
 
 * [The GNU C Library][glibc] ([sys-libs/glibc][] on [Gentoo][]).
 * [Jansson][] for JSON parsing ([dev-libs/jansson][] on [Gentoo][]).
+* [libcap-ng][] for adjusting [capabilities][capabilities.7]
+  ([sys-libs/libcap-ng][] on [Gentoo][]).
 
 ### Build dependencies
 
@@ -482,6 +505,7 @@ Ccon is pretty easy to compile, but to use the stock
 * Ccon is under the [GPLv3+](COPYING).
 * [Glibc is under][glibc-license] the [LGPL-2.1+][glibc-license].
 * [Jansson is under][jansson-license] the [MIT license][mit].
+* [libcap-ng is under][libcap-ng-license] the [LGPL-2.1+][glibc-license].
 
 Because all the dependencies are [GPL-compatible][], ccon binaries can
 be distributed under the GPLv3+.
@@ -495,6 +519,8 @@ be distributed under the GPLv3+.
 [indent]: https://www.gnu.org/software/indent/
 [Jansson]: http://www.digip.org/jansson/
 [jansson-license]: https://github.com/akheron/jansson/blob/v2.7/LICENSE
+[libcap-ng]: http://people.redhat.com/sgrubb/libcap-ng/
+[libcap-ng-license]: https://fedorahosted.org/libcap-ng/browser/tags/libcap-ng-0.7.7/COPYING.LIB
 [make]: https://www.gnu.org/software/make/
 [Nginx]: http://nginx.org/
 [pkg-config]: http://www.freedesktop.org/wiki/Software/pkg-config/
@@ -529,6 +555,7 @@ be distributed under the GPLv3+.
 [getcwd.3]: http://man7.org/linux/man-pages/man3/getcwd.3.html
 [stdin.3]: http://man7.org/linux/man-pages/man3/stdin.3.html
 [filesystems.5]: http://man7.org/linux/man-pages/man5/filesystems.5.html
+[capabilities.7]: http://man7.org/linux/man-pages/man7/capabilities.7.html
 [namespaces.7]: http://man7.org/linux/man-pages/man7/namespaces.7.html
 [pid_namespaces.7]: http://man7.org/linux/man-pages/man7/pid_namespaces.7.html
 [user_namespaces.7]: http://man7.org/linux/man-pages/man7/user_namespaces.7.html

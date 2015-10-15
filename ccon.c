@@ -30,6 +30,7 @@
 #include <sys/types.h>
 #include <sys/wait.h>
 
+#include <cap-ng.h>
 #include <jansson.h>
 
 #define STACK_SIZE (1024 * 1024)
@@ -56,6 +57,8 @@ int child_func(void *arg);
 int handle_child(json_t * config, int *to_parent, int *from_parent);
 int set_working_directory(json_t * config);
 int set_user_group(json_t * config);
+int _capng_name_to_capability(const char *name);
+int set_capabilities(json_t * config);
 int exec_process(json_t * config);
 void block_forever();
 int get_namespace_type(const char *name, int *nstype);
@@ -428,6 +431,10 @@ int handle_child(json_t * config, int *to_parent, int *from_parent)
 		return 1;
 	}
 
+	if (set_capabilities(config)) {
+		return 1;
+	}
+
 	if (exec_process(config)) {
 		return 1;
 	}
@@ -543,6 +550,70 @@ int set_user_group(json_t * config)
 		free(groups);
 	}
 	return err;
+}
+
+/* wrap capng_name_to_capability to handle CAP_-prefixed names */
+int _capng_name_to_capability(const char *name)
+{
+	if (strlen(name) < 4) {
+		return -1;
+	}
+	return capng_name_to_capability(name + 4);
+}
+
+int set_capabilities(json_t * config)
+{
+	json_t *process, *capabilities, *value;
+	const char *name;
+	size_t i;
+	int cap;
+
+	process = json_object_get(config, "process");
+	if (!process) {
+		return 0;
+	}
+
+	capabilities = json_object_get(process, "capabilities");
+	if (!capabilities) {
+		return 0;
+	}
+
+	fprintf(stderr, "remove all capabilities from the scratch space\n");
+	capng_clear(CAPNG_SELECT_BOTH);
+
+	json_array_foreach(capabilities, i, value) {
+		name = json_string_value(value);
+		if (!name) {
+			fprintf(stderr,
+				"failed to extract process.capabilities[%d]\n",
+				(int)i);
+			return 1;
+		}
+		cap = _capng_name_to_capability(name);
+		if (cap < 0) {
+			fprintf(stderr, "unrecognized capability name: %s\n",
+				name);
+		}
+		fprintf(stderr, "restore %s capability to scratch space\n",
+			name);
+		if (capng_update
+		    (CAPNG_ADD,
+		     CAPNG_EFFECTIVE | CAPNG_PERMITTED | CAPNG_INHERITABLE |
+		     CAPNG_BOUNDING_SET, cap)) {
+			fprintf(stderr, "failed to restore the %s capability\n",
+				name);
+			return 1;
+		}
+	}
+
+	fprintf(stderr,
+		"apply specified capabilities to bounding and traditional sets\n");
+	if (capng_apply(CAPNG_SELECT_BOTH)) {
+		fprintf(stderr, "failed to apply capabilities\n");
+		return 1;
+	}
+
+	return 0;
 }
 
 int exec_process(json_t * config)

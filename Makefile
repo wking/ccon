@@ -1,7 +1,7 @@
 CC := cc
-CFLAGS := $(shell pkg-config --cflags jansson)
-LDFLAGS := $(shell pkg-config --libs-only-L jansson)
-LDLIBS := $(shell pkg-config --libs-only-l jansson)
+CFLAGS := $(shell pkg-config --cflags jansson libcap-ng)
+LDFLAGS := $(shell pkg-config --libs-only-L jansson libcap-ng)
+LDLIBS := $(shell pkg-config --libs-only-l jansson libcap-ng)
 
 .PHONY: all clean fmt
 .PRECIOUS: %.o

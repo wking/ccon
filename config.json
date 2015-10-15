@@ -50,6 +50,12 @@
       "gid": 0
     },
     "cwd": "/tmp",
+    "capabilities": [
+      "CAP_AUDIT_WRITE",
+      "CAP_KILL",
+      "CAP_NET_BIND_SERVICE",
+      "CAP_NET_RAW"
+    ],
     "args": [
       "busybox",
       "sh"
