@@ -20,11 +20,13 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <fcntl.h>
+#include <libgen.h>
 #include <sched.h>
 #include <signal.h>
 #include <string.h>
 #include <unistd.h>
 #include <sys/mount.h>
+#include <sys/syscall.h>
 #include <sys/types.h>
 #include <sys/wait.h>
 
@@ -65,6 +67,7 @@ int set_user_map(json_t * user, pid_t cpid, const char *key,
 int set_user_setgroups(json_t * user, pid_t cpid);
 int get_mount_flag(const char *name, unsigned long *flag);
 int handle_mounts(json_t * config);
+int pivot_root_remove_old(const char *new_root);
 int _wait(pid_t pid);
 ssize_t getline_fd(char **buf, size_t * n, int fd);
 char **json_array_of_strings_value(json_t * array);
@@ -1097,13 +1100,20 @@ int handle_mounts(json_t * config)
 			}
 		}
 
-		fprintf(stderr,
-			"mount %lu: %s to %s (type: %s, flags: %lu, data %s)\n",
-			(unsigned long int)i, source, target, type, flags,
-			data);
-		if (mount(source, target, type, flags, data) == -1) {
-			perror("mount");
-			return 1;
+		if (type
+		    && strncmp("pivot-root", type, strlen("pivot-root")) == 0) {
+			if (pivot_root_remove_old(source)) {
+				return 1;
+			}
+		} else {
+			fprintf(stderr,
+				"mount %lu: %s to %s (type: %s, flags: %lu, data %s)\n",
+				(unsigned long int)i, source, target, type,
+				flags, data);
+			if (mount(source, target, type, flags, data) == -1) {
+				perror("mount");
+				return 1;
+			}
 		}
 	}
 
@@ -1138,6 +1148,69 @@ int _wait(pid_t pid)
 	default:
 		fprintf(stderr, "unrecognized child exit condition: %d\n",
 			siginfo.si_code);
+	}
+
+	return err;
+}
+
+int pivot_root_remove_old(const char *new_root)
+{
+	char put_old[MAX_PATH];
+	char *old_basename;
+	int err = 0, fd, size;
+
+	size = snprintf(put_old, MAX_PATH, "%s/pivot-root.XXXXXX", new_root);
+	if (size < 0) {
+		fprintf(stderr, "failed to format %s/pivot-root.XXXXXX",
+			new_root);
+		return 1;
+	}
+	if (size >= MAX_PATH) {
+		fprintf(stderr,
+			"failed to format %s/.pivot-root.XXXXXX (needed a buffer with %d bytes)\n",
+			new_root, size);
+		return 1;
+	}
+
+	if (!mkdtemp(put_old)) {
+		perror("mkdtemp");
+		return 1;
+	}
+
+	if (chdir(new_root)) {
+		perror("chdir");
+		err = 1;
+		goto cleanup;
+	}
+
+	fprintf(stderr, "pivot root to %s\n", new_root);
+	if (syscall(SYS_pivot_root, new_root, put_old)) {
+		perror("pivot_root");
+		if (rmdir(put_old)) {
+			perror("rmdir");
+		}
+		return 1;
+	}
+
+	old_basename = basename(put_old);
+
+	if (chdir("/")) {
+		perror("chdir");
+		err = 1;
+		goto cleanup;
+	}
+
+	fprintf(stderr, "unmount old root from %s\n", old_basename);
+	if (umount2(old_basename, MNT_DETACH)) {
+		perror("umount");
+		err = 1;
+		goto cleanup;
+	}
+
+ cleanup:
+	if (rmdir(old_basename)) {
+		perror("rmdir");
+		err = 1;
 	}
 
 	return err;
