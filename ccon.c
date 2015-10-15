@@ -30,6 +30,7 @@
 #include <jansson.h>
 
 #define STACK_SIZE (1024 * 1024)
+#define MAX_PATH 1024
 
 /* messages passed between the host and container */
 #define USER_NAMESPACE_MAPPING_COMPLETE "user-namespace-mapping-complete\n"
@@ -751,7 +752,7 @@ int set_user_map(json_t * user, pid_t cpid, const char *key,
 		 const char *filename)
 {
 	json_t *mappings, *mapping, *value;
-	char path[80];
+	char path[MAX_PATH];
 	size_t i;
 	uid_t host, container;
 	int err = 0, fd = -1, size;
@@ -762,14 +763,14 @@ int set_user_map(json_t * user, pid_t cpid, const char *key,
 	}
 
 	size =
-	    snprintf(path, 80, "/proc/%lu/%s", (unsigned long int)cpid,
+	    snprintf(path, MAX_PATH, "/proc/%lu/%s", (unsigned long int)cpid,
 		     filename);
 	if (size < 0) {
 		fprintf(stderr, "failed to format /proc/%lu/%s\n",
 			(unsigned long int)cpid, filename);
 		return 1;
 	}
-	if (size >= 80) {
+	if (size >= MAX_PATH) {
 		fprintf(stderr,
 			"failed to format /proc/%lu/%s (needed a buffer with %d bytes)\n",
 			(unsigned long int)cpid, filename, size);
@@ -841,7 +842,7 @@ int set_user_setgroups(json_t * user, pid_t cpid)
 {
 	json_t *setgroups;
 	const char *value;
-	char path[80];
+	char path[MAX_PATH];
 	int err = 0, fd = -1, size;
 
 	setgroups = json_object_get(user, "setgroups");
@@ -856,13 +857,14 @@ int set_user_setgroups(json_t * user, pid_t cpid)
 	}
 
 	size =
-	    snprintf(path, 80, "/proc/%lu/setgroups", (unsigned long int)cpid);
+	    snprintf(path, MAX_PATH, "/proc/%lu/setgroups",
+		     (unsigned long int)cpid);
 	if (size < 0) {
 		fprintf(stderr, "failed to format /proc/%lu/setgroups\n",
 			(unsigned long int)cpid);
 		return 1;
 	}
-	if (size >= 80) {
+	if (size >= MAX_PATH) {
 		fprintf(stderr,
 			"failed to format /proc/%lu/setgroups (needed a buffer with %d bytes)\n",
 			(unsigned long int)cpid, size);
