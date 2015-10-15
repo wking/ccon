@@ -409,26 +409,28 @@ int handle_child(json_t * config, int *to_parent, int *from_parent)
 			(int)len, (int)len - 1, line);
 		goto cleanup;
 	}
+	free(line);
+	allocated = 0;
+	line = NULL;
 
 	if (close(*from_parent) == -1) {
 		perror("close host-to-container pipe read-end");
-		err = 1;
 		*from_parent = -1;
-		goto cleanup;
+		return 1;
 	}
 	*from_parent = -1;
 
-	err = set_working_directory(config);
-	if (err) {
-		goto cleanup;
+	if (set_working_directory(config)) {
+		return 1;
 	}
 
-	err = set_user_group(config);
-	if (err) {
-		goto cleanup;
+	if (set_user_group(config)) {
+		return 1;
 	}
 
-	err = exec_process(config);
+	if (exec_process(config)) {
+		return 1;
+	}
 
  cleanup:
 	if (line != NULL) {
