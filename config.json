@@ -1,0 +1,62 @@
+{
+  "version": "0.1.0",
+  "namespaces": {
+    "user": {
+      "setgroups": false,
+      "uidMappings": [
+        {
+          "containerID": 0,
+          "hostID": 1000,
+          "size": 1
+        }
+      ],
+      "gidMappings": [
+        {
+          "containerID": 0,
+          "hostID": 1000,
+          "size": 1
+        }
+      ]
+    },
+    "mount": {
+      "mounts": [
+        {
+          "target": "/proc",
+          "type": "proc",
+          "flags": [
+            "MS_PRIVATE",
+            "MS_REC"
+          ]
+        },
+        {
+          "target": "/proc",
+          "type": "proc",
+          "flags": [
+            "MS_NOSUID",
+            "MS_NOEXEC",
+            "MS_NODEV"
+          ]
+        }
+      ]
+    },
+    "ipc": {},
+    "net": {},
+    "pid": {},
+    "uts": {}
+  },
+  "process": {
+    "user": {
+      "uid": 0,
+      "gid": 0
+    },
+    "cwd": "/tmp",
+    "args": [
+      "busybox",
+      "sh"
+    ],
+    "env": [
+      "PATH=/bin:/usr/bin",
+      "TERM=xterm"
+    ]
+  }
+}
