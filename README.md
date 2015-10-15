@@ -7,6 +7,29 @@ around the underlying syscalls and kernel primitives.  It makes it
 easy to apply a given configuration, but does not have an opinion
 about what a container should look like.
 
+## Table of contents
+
+* [Lifecycle](#lifecycle)
+* [Configuration](#configuration)
+  * [Version](#version)
+  * [Namespaces](#namespaces)
+    * [User namespace](#user-namespace)
+    * [Mount namespace](#mount-namespace)
+    * [PID namespace](#pid-namespace)
+    * [Network namespace](#network-namespace)
+    * [IPC namespace](#ipc-namespace)
+    * [UTS namespace](#uts-namespace)
+  * [Process](#process)
+    * [User](#user)
+    * [Current working directory](#current-working-directory)
+    * [Arguments](#arguments)
+    * [Path](#path)
+    * [Environment variables](#environment-variables)
+* [Dependencies](#dependencies)
+  * [Build dependencies](#build-dependencies)
+  * [Development dependencies](#development-dependencies)
+* [Licensing](#licensing)
+
 ## Lifecycle
 
 When you invoke it from the command line, ccon [`clone`][clone.2]'s a
