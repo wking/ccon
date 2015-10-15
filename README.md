@@ -394,7 +394,9 @@ Change to a different directory before executing the configured code.
 #### Arguments
 
 The command that the container process executes after container setup
-is complete.
+is complete.  The process will inherit any open file descriptors
+(e.g. the [standard streams][stdin.3] or [systemd's
+`SD_LISTEN_FDS_START`][sd_listen_fds]).
 
 * **`args`** (optional, array of strings) holds command-line arguments
   passed to [`execvpe`][exec.3].  The first argument (**`args[0]`**)
@@ -525,8 +527,11 @@ be distributed under the GPLv3+.
 [environ.3p]: https://www.kernel.org/pub/linux/docs/man-pages/man-pages-posix/
 [exec.3]: http://man7.org/linux/man-pages/man3/exec.3.html
 [getcwd.3]: http://man7.org/linux/man-pages/man3/getcwd.3.html
+[stdin.3]: http://man7.org/linux/man-pages/man3/stdin.3.html
 [filesystems.5]: http://man7.org/linux/man-pages/man5/filesystems.5.html
 [namespaces.7]: http://man7.org/linux/man-pages/man7/namespaces.7.html
 [pid_namespaces.7]: http://man7.org/linux/man-pages/man7/pid_namespaces.7.html
 [user_namespaces.7]: http://man7.org/linux/man-pages/man7/user_namespaces.7.html
 [switch_root.8.notes]: http://man7.org/linux/man-pages/man8/switch_root.8.html#NOTES
+
+[sd_listen_fds]: http://www.freedesktop.org/software/systemd/man/sd_listen_fds.html
