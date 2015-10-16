@@ -62,6 +62,7 @@ static int _capng_name_to_capability(const char *name);
 static int set_capabilities(json_t * config);
 static int exec_container_process(json_t * config);
 static int exec_process(json_t * process);
+static int run_hooks(json_t * config, const char *name, pid_t cpid);
 static void block_forever();
 static int get_namespace_type(const char *name, int *nstype);
 static int get_clone_flags(json_t * config, unsigned long *flags);
@@ -266,7 +267,14 @@ static int handle_parent(json_t * config, pid_t cpid, int *to_child,
 	}
 	*from_child = -1;
 
-	/* TODO: run pre-start hooks */
+	if (run_hooks(config, "pre-start", cpid)) {
+		err = 1;
+		fprintf(stderr, "SIGKILL the container process\n");
+		if (kill(cpid, SIGKILL)) {
+			perror("kill");
+		}
+		goto wait;
+	}
 
 	line = EXEC_PROCESS;
 	len = strlen(line);
@@ -276,6 +284,7 @@ static int handle_parent(json_t * config, pid_t cpid, int *to_child,
 	}
 	line = NULL;
 
+ wait:
 	if (close(*to_child) == -1) {
 		perror("close host-to-container pipe write-end");
 		*to_child = -1;
@@ -284,6 +293,8 @@ static int handle_parent(json_t * config, pid_t cpid, int *to_child,
 	*to_child = -1;
 
 	err = _wait(cpid, "container");
+
+	run_hooks(config, "post-stop", 0);
 
  cleanup:
 	if (line != NULL) {
@@ -681,6 +692,88 @@ static int exec_process(json_t * process)
 		free(path);
 	}
 	return err;
+}
+
+static int run_hooks(json_t * config, const char *name, pid_t cpid)
+{
+	pid_t hpid;
+	json_t *hooks, *hook_array, *hook;
+	size_t i;
+	int pipe_fd[2], err;
+
+	hooks = json_object_get(config, "hooks");
+	if (!hooks) {
+		return 0;
+	}
+
+	hook_array = json_object_get(hooks, name);
+	if (!hook_array) {
+		return 0;
+	}
+
+	json_array_foreach(hook_array, i, hook) {
+		fprintf(stderr, "run %s hook %d\n", name, (int)i);
+
+		if (cpid) {
+			if (pipe(pipe_fd) == -1) {
+				perror("pipe");
+				return 1;
+			}
+
+			/* write to kernel buffer, this is less than PIPE_BUF */
+			if (dprintf(pipe_fd[1], "%d\n", cpid) < 0) {
+				perror("dprintf");
+				close_pipe(pipe_fd);
+				return 1;
+			}
+
+			if (close(pipe_fd[1])) {
+				perror("close host-to-hook pipe write-end");
+				close_pipe(pipe_fd);
+				return 1;
+			}
+			pipe_fd[1] = -1;
+		}
+
+		hpid = fork();
+		if (hpid == -1) {
+			perror("fork");
+			if (cpid) {
+				close_pipe(pipe_fd);
+			}
+			return 1;
+		}
+
+		if (hpid == 0) {	/* child */
+			if (cpid) {
+				if (dup2(pipe_fd[0], STDIN_FILENO) == -1) {
+					perror("dup2");
+					return 1;
+				}
+				if (close(pipe_fd[0])) {
+					perror
+					    ("close host-to-hook pipe read-end after stdin dup");
+					return 1;
+				}
+			}
+			exec_process(hook);
+			close_pipe(pipe_fd);
+			return 1;
+		}
+
+		fprintf(stderr, "launched hook %d with PID %d\n", (int)i, hpid);
+
+		if (cpid && close_pipe(pipe_fd)) {
+			return 1;
+		}
+
+		err = _wait(hpid, "hook");
+		if (cpid && err) {
+			return 1;	/* abort failed pre-start execution */
+		}
+	}
+
+	return 0;
 }
 
 static void block_forever()

@@ -26,6 +26,9 @@ about what a container should look like.
     * [Arguments](#arguments)
     * [Path](#path)
     * [Environment variables](#environment-variables)
+  * [Hooks](#hooks)
+    * [Pre-start hooks](#pre-start-hooks)
+    * [Post-stop hooks](#post-stop-hooks)
 * [Dependencies](#dependencies)
   * [Build dependencies](#build-dependencies)
   * [Development dependencies](#development-dependencies)
@@ -55,7 +58,8 @@ setup.  Here's an outline of the lifecycle:
 |                           | …                           |
 |                           | dies                        |
 | collects child exit code  |                             |
-| exits with same code      |                             |
+| runs post-stop hooks      |                             |
+| exits with child's code   |                             |
 
 A number of those steps are optional.  For details, see the relevant
 section in the [configuration specification](#configuration).  In
@@ -482,6 +486,143 @@ it inherited from the host.
 
 Which will set `PATH` and `TERM`.
 
+### Hooks
+
+Not all container-related functionality is built into ccon (the only
+setup handled by the host process is the `/proc/{pid}/setgroups`,
+etc., writes for [user namespaces](#user-namespace).  For example,
+[control group][cgroups] manipulation and [veth network
+configuration][namespaces.7] should be handled with external tools.
+What ccon provides are hooks so you can call those external tools at
+the appropriate point in the [lifecycle](#lifecycle).
+
+* **`hooks`** (optional, object) configuring the hooks run for each
+  hook-triggering event.
+
+#### Example
+
+```json
+"hooks": {
+  "pre-start": [
+    {
+      "args": [
+        "echo",
+        "I'm a pre-start hook"
+      ]
+    }
+  ],
+  "post-stop": [
+    {
+      "args": [
+        "echo",
+        "I'm a post-stop hook"
+      ]
+    }
+  ]
+}
+```
+
+Which will just print messages to the host process's stdout for each
+hook-triggering event.
+
+#### Pre-start hooks
+
+Hooks run after the container setup is complete but before the
+configured [**`process`**](#process) is executed.  This is useful for
+additional container configuration (e.g. creating cgroups or
+performing network setup)
+
+* **`pre-start`** (optional, array of objects) holds [process
+  objects](#process) (like [**`process`**](#process) except for stdin
+  handling) to run after the pre-start event.
+
+Each hook receives the container process's PID in the host [PID
+namespace][namespaces.7] on its [stdin][stdin.3].  Its stdout and
+stderr are inherited from the host process.  The hooks are executed in
+the listed order, and a nonzero exit code from any hook will cause the
+host process to abandon further hook execution, [`SIGKILL`][signal.7]
+the container process.  The host process resumes the usual
+[lifecycle](#lifecycle) at “waits on child death”.
+
+#### Example
+
+```json
+"pre-start": [
+  {
+    "args": [
+      "mkdir",
+      "-p",
+      "/sys/fs/cgroup/unified/nginx-0/container"
+    ]
+  },
+  {
+    "args": [
+      "tee",
+      "/sys/fs/cgroup/unified/nginx-0/container/cgroup.procs"
+    ]
+  }
+]
+```
+
+Which will create new `nginx-0` and `nginx-0/container` cgroups in the
+[unified hierarchy][cgroups-unified] (if they don't already exist) and
+add the container process to that cgroup.
+
+#### Post-start hooks
+
+Hooks run after the host process has reaped the container process.
+You could handle this in the shell with:
+
+```
+$ ccon; post_stop_hook_1; post_stop_hook_2
+```
+
+but the most common use will be cleaning up after [pre-start
+hooks](#pre-start-hooks), and it's nice to configure both in the same
+place (the ccon config file).
+
+* **`post-stop`** (optional, array of objects) holds [process
+  objects](#process) (like [**`process`**](#process)) to run after the
+  post-stop event.
+
+Its [standard streams][stdin.3] are inherited from the host process.
+The hooks are executed in the listed order, and a nonzero exit code
+from any hook will cause the host process to print a message to
+stderr, after which it continues as if the hook had exited with zero.
+
+#### Example
+
+```json
+"post-stop": [
+  {
+    "args": [
+      "rmdir",
+      "/sys/fs/cgroup/unified/nginx-0/container"
+    ]
+  },
+  {
+    "args": [
+      "rmdir",
+      "/sys/fs/cgroup/unified/nginx-0"
+    ]
+  }
+]
+```
+
+Which will remove `nginx-0/container` and `nginx-0` cgroups (such as
+those created by the [pre-start example](#pre-start-hooks).  This will
+only succeed if the namespaces are empty, so if you were using this in
+production it would be best to:
+
+* Ensure there were no other processes in those cgroups (e.g. by
+  creating a new [PID namespace](#pid-namespace) and adding all
+  additional processes to that namespace before adding them to the
+  `nginx-0` cgroup tree)
+* Use a tool like [`cgdelete`][cgdelete.1] to recursively remove
+  `nginx-0`, which would also remove additional child cgroups beyond
+  `nginx-0/container` that may have been added by other processes
+  since `nginx-0` was created.
+
 ## Dependencies
 
 * [The GNU C Library][glibc] ([sys-libs/glibc][] on [Gentoo][]).
@@ -541,6 +682,7 @@ be distributed under the GPLv3+.
 [sys-devel/make]: https://packages.gentoo.org/package/sys-devel/make
 [sys-libs/glibc]: https://packages.gentoo.org/package/sys-libs/glibc
 
+[cgdelete.1]: http://sourceforge.net/p/libcg/libcg/ci/master/tree/doc/man/cgdelete.1
 [id.1]: http://man7.org/linux/man-pages/man1/id.1.html
 [nsenter.1]: http://man7.org/linux/man-pages/man1/nsenter.1.html
 [unshare.1]: http://man7.org/linux/man-pages/man1/unshare.1.html
@@ -561,7 +703,10 @@ be distributed under the GPLv3+.
 [capabilities.7]: http://man7.org/linux/man-pages/man7/capabilities.7.html
 [namespaces.7]: http://man7.org/linux/man-pages/man7/namespaces.7.html
 [pid_namespaces.7]: http://man7.org/linux/man-pages/man7/pid_namespaces.7.html
+[signal.7]: http://man7.org/linux/man-pages/man7/signal.7.html
 [user_namespaces.7]: http://man7.org/linux/man-pages/man7/user_namespaces.7.html
 [switch_root.8.notes]: http://man7.org/linux/man-pages/man8/switch_root.8.html#NOTES
 
+[cgroups]: https://www.kernel.org/doc/Documentation/cgroups/cgroups.txt
+[cgroups-unified]: https://www.kernel.org/doc/Documentation/cgroups/unified-hierarchy.txt
 [sd_listen_fds]: http://www.freedesktop.org/software/systemd/man/sd_listen_fds.html

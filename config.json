@@ -64,5 +64,23 @@
       "PATH=/bin:/usr/bin",
       "TERM=xterm"
     ]
+  },
+  "hooks": {
+    "pre-start": [
+      {
+        "args": [
+          "echo",
+          "I'm a pre-start hook"
+        ]
+      }
+    ],
+    "post-stop": [
+      {
+        "args": [
+          "echo",
+          "I'm a post-stop hook"
+        ]
+      }
+    ]
   }
 }
