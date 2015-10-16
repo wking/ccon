@@ -72,7 +72,7 @@ static int set_user_setgroups(json_t * user, pid_t cpid);
 static int get_mount_flag(const char *name, unsigned long *flag);
 static int handle_mounts(json_t * config);
 static int pivot_root_remove_old(const char *new_root);
-static int _wait(pid_t pid);
+static int _wait(pid_t pid, const char *name);
 static ssize_t getline_fd(char **buf, size_t * n, int fd);
 static char **json_array_of_strings_value(json_t * array);
 
@@ -295,7 +295,7 @@ static int handle_parent(json_t * config, pid_t cpid, int *to_child,
 	}
 	*to_child = -1;
 
-	err = _wait(cpid);
+	err = _wait(cpid, "container");
 
  cleanup:
 	if (line != NULL) {
@@ -1197,7 +1197,7 @@ static int handle_mounts(json_t * config)
 	return 0;
 }
 
-static int _wait(pid_t pid)
+static int _wait(pid_t pid, const char *name)
 {
 	siginfo_t siginfo;
 	int err;
@@ -1212,18 +1212,19 @@ static int _wait(pid_t pid)
 	switch (siginfo.si_code) {
 	case CLD_EXITED:
 		err = siginfo.si_status;
-		fprintf(stderr, "process %d exited with %d\n", (int)pid, err);
+		fprintf(stderr, "%s process %d exited with %d\n", name,
+			(int)pid, err);
 		break;
 	case CLD_KILLED:
-		fprintf(stderr, "child killed (%s, %d)\n",
+		fprintf(stderr, "%s killed (%s, %d)\n", name,
 			strsignal(siginfo.si_status), siginfo.si_status);
 		break;
 	case CLD_DUMPED:
-		fprintf(stderr, "child killed by signal %d and dumped core\n",
-			siginfo.si_status);
+		fprintf(stderr, "%s killed by signal %d and dumped core\n",
+			name, siginfo.si_status);
 		break;
 	default:
-		fprintf(stderr, "unrecognized child exit condition: %d\n",
+		fprintf(stderr, "unrecognized %s exit condition: %d\n", name,
 			siginfo.si_code);
 	}
 

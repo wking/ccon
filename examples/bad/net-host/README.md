@@ -23,7 +23,7 @@ restore CAP_NET_BIND_SERVICE capability to scratch space
 apply specified capabilities to bounding and traditional sets
 execute nc
 Can't grab 0.0.0.0:80 with bind : Permission denied
-process 16149 exited with 1
+container process 16149 exited with 1
 ```
 
 [`user_namespaces(7)`][user_namespaces.7] discusses this limitation in
