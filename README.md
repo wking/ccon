@@ -79,6 +79,9 @@ namespace, so ccon's mount listing falls under
 launch an interactive [BusyBox][] shell in new namespaces (you may
 need to adjust the **`hostID`** entries to match `id -u` and `id -g`).
 
+There are additional examples focusing on specific tasks in the
+[`examples/`](examples) directory.
+
 ### Version
 
 The ccon version represented in the config file.
