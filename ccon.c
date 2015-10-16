@@ -49,31 +49,32 @@ typedef struct child_func_args {
 
 extern char **environ;
 
-int validate_config(json_t * config);
-int validate_version(json_t * config);
-int run_container(json_t * config);
-int handle_parent(json_t * config, pid_t cpid, int *to_child, int *from_child);
-int child_func(void *arg);
-int handle_child(json_t * config, int *to_parent, int *from_parent);
-int set_working_directory(json_t * config);
-int set_user_group(json_t * config);
-int _capng_name_to_capability(const char *name);
-int set_capabilities(json_t * config);
-int exec_process(json_t * config);
-void block_forever();
-int get_namespace_type(const char *name, int *nstype);
-int get_clone_flags(json_t * config, unsigned long *flags);
-int join_namespaces(json_t * config);
-int set_user_namespace_mappings(json_t * config, pid_t cpid);
-int set_user_map(json_t * user, pid_t cpid, const char *key,
-		 const char *filename);
-int set_user_setgroups(json_t * user, pid_t cpid);
-int get_mount_flag(const char *name, unsigned long *flag);
-int handle_mounts(json_t * config);
-int pivot_root_remove_old(const char *new_root);
-int _wait(pid_t pid);
-ssize_t getline_fd(char **buf, size_t * n, int fd);
-char **json_array_of_strings_value(json_t * array);
+static int validate_config(json_t * config);
+static int validate_version(json_t * config);
+static int run_container(json_t * config);
+static int handle_parent(json_t * config, pid_t cpid, int *to_child,
+			 int *from_child);
+static int child_func(void *arg);
+static int handle_child(json_t * config, int *to_parent, int *from_parent);
+static int set_working_directory(json_t * config);
+static int set_user_group(json_t * config);
+static int _capng_name_to_capability(const char *name);
+static int set_capabilities(json_t * config);
+static int exec_process(json_t * config);
+static void block_forever();
+static int get_namespace_type(const char *name, int *nstype);
+static int get_clone_flags(json_t * config, unsigned long *flags);
+static int join_namespaces(json_t * config);
+static int set_user_namespace_mappings(json_t * config, pid_t cpid);
+static int set_user_map(json_t * user, pid_t cpid, const char *key,
+			const char *filename);
+static int set_user_setgroups(json_t * user, pid_t cpid);
+static int get_mount_flag(const char *name, unsigned long *flag);
+static int handle_mounts(json_t * config);
+static int pivot_root_remove_old(const char *new_root);
+static int _wait(pid_t pid);
+static ssize_t getline_fd(char **buf, size_t * n, int fd);
+static char **json_array_of_strings_value(json_t * array);
 
 int main(int argc, char **argv)
 {
@@ -128,7 +129,7 @@ int validate_config(json_t * config)
 	return 0;
 }
 
-int validate_version(json_t * config)
+static int validate_version(json_t * config)
 {
 	const char *version = json_string_value(config);
 	const char *supported_versions[] = {
@@ -149,7 +150,7 @@ int validate_version(json_t * config)
 	return 1;
 }
 
-int run_container(json_t * config)
+static int run_container(json_t * config)
 {
 	child_func_args_t child_args;
 	char *stack = NULL, *stack_top;
@@ -236,7 +237,8 @@ int run_container(json_t * config)
 	return err;
 }
 
-int handle_parent(json_t * config, pid_t cpid, int *to_child, int *from_child)
+static int handle_parent(json_t * config, pid_t cpid, int *to_child,
+			 int *from_child)
 {
 	char *line = NULL;
 	size_t allocated = 0, len;
@@ -302,7 +304,7 @@ int handle_parent(json_t * config, pid_t cpid, int *to_child, int *from_child)
 	return err;
 }
 
-int child_func(void *arg)
+static int child_func(void *arg)
 {
 	child_func_args_t *child_args = (child_func_args_t *) arg;
 	int err = 0;
@@ -352,7 +354,7 @@ int child_func(void *arg)
 	return err;
 }
 
-int handle_child(json_t * config, int *to_parent, int *from_parent)
+static int handle_child(json_t * config, int *to_parent, int *from_parent)
 {
 	char *line = NULL;
 	size_t allocated = 0, len;
@@ -446,7 +448,7 @@ int handle_child(json_t * config, int *to_parent, int *from_parent)
 	return err;
 }
 
-int set_working_directory(json_t * config)
+static int set_working_directory(json_t * config)
 {
 	const char *path;
 	json_t *process, *cwd;
@@ -475,7 +477,7 @@ int set_working_directory(json_t * config)
 	return 0;
 }
 
-int set_user_group(json_t * config)
+static int set_user_group(json_t * config)
 {
 	uid_t uid;
 	gid_t gid, *groups = NULL;
@@ -553,7 +555,7 @@ int set_user_group(json_t * config)
 }
 
 /* wrap capng_name_to_capability to handle CAP_-prefixed names */
-int _capng_name_to_capability(const char *name)
+static int _capng_name_to_capability(const char *name)
 {
 	if (strlen(name) < 4) {
 		return -1;
@@ -561,7 +563,7 @@ int _capng_name_to_capability(const char *name)
 	return capng_name_to_capability(name + 4);
 }
 
-int set_capabilities(json_t * config)
+static int set_capabilities(json_t * config)
 {
 	json_t *process, *capabilities, *value;
 	const char *name;
@@ -616,7 +618,7 @@ int set_capabilities(json_t * config)
 	return 0;
 }
 
-int exec_process(json_t * config)
+static int exec_process(json_t * config)
 {
 	char *path = NULL;
 	char **argv = NULL, **env = NULL;
@@ -702,7 +704,7 @@ int exec_process(json_t * config)
 	return err;
 }
 
-void block_forever()
+static void block_forever()
 {
 	sigset_t mask;
 
@@ -715,7 +717,7 @@ void block_forever()
 	return;
 }
 
-int get_namespace_type(const char *name, int *nstype)
+static int get_namespace_type(const char *name, int *nstype)
 {
 	if (strncmp("mount", name, strlen("mount") + 1) == 0) {
 		*nstype = CLONE_NEWNS;
@@ -737,7 +739,7 @@ int get_namespace_type(const char *name, int *nstype)
 	return 0;
 }
 
-int get_clone_flags(json_t * config, unsigned long *flags)
+static int get_clone_flags(json_t * config, unsigned long *flags)
 {
 	json_t *namespace, *value, *path;
 	const char *key;
@@ -762,7 +764,7 @@ int get_clone_flags(json_t * config, unsigned long *flags)
 	return 0;
 }
 
-int join_namespaces(json_t * config)
+static int join_namespaces(json_t * config)
 {
 	json_t *namespace, *value, *path;
 	const char *key, *p;
@@ -804,7 +806,7 @@ int join_namespaces(json_t * config)
 	return 0;
 }
 
-int set_user_namespace_mappings(json_t * config, pid_t cpid)
+static int set_user_namespace_mappings(json_t * config, pid_t cpid)
 {
 	json_t *namespace, *user, *v1, *v2;
 
@@ -833,8 +835,8 @@ int set_user_namespace_mappings(json_t * config, pid_t cpid)
 	return 0;
 }
 
-int set_user_map(json_t * user, pid_t cpid, const char *key,
-		 const char *filename)
+static int set_user_map(json_t * user, pid_t cpid, const char *key,
+			const char *filename)
 {
 	json_t *mappings, *mapping, *value;
 	char path[MAX_PATH];
@@ -923,7 +925,7 @@ int set_user_map(json_t * user, pid_t cpid, const char *key,
 	return err;
 }
 
-int set_user_setgroups(json_t * user, pid_t cpid)
+static int set_user_setgroups(json_t * user, pid_t cpid)
 {
 	json_t *setgroups;
 	const char *value;
@@ -979,7 +981,7 @@ int set_user_setgroups(json_t * user, pid_t cpid)
 	return err;
 }
 
-int get_mount_flag(const char *name, unsigned long *flag)
+static int get_mount_flag(const char *name, unsigned long *flag)
 {
 	if (strncmp("MS_BIND", name, strlen("MS_BIND") + 1) == 0) {
 		*flag = MS_BIND;
@@ -1048,7 +1050,7 @@ int get_mount_flag(const char *name, unsigned long *flag)
 	return 0;
 }
 
-int handle_mounts(json_t * config)
+static int handle_mounts(json_t * config)
 {
 	json_t *namespaces, *mt_ns, *mounts, *mt, *v1, *v2;
 	const char *source, *target, *type, *data, *flag;
@@ -1195,7 +1197,7 @@ int handle_mounts(json_t * config)
 	return 0;
 }
 
-int _wait(pid_t pid)
+static int _wait(pid_t pid)
 {
 	siginfo_t siginfo;
 	int err;
@@ -1228,7 +1230,7 @@ int _wait(pid_t pid)
 	return err;
 }
 
-int pivot_root_remove_old(const char *new_root)
+static int pivot_root_remove_old(const char *new_root)
 {
 	char put_old[MAX_PATH];
 	char *old_basename;
@@ -1292,7 +1294,7 @@ int pivot_root_remove_old(const char *new_root)
 }
 
 // getline(3) but reading from a file descriptor
-ssize_t getline_fd(char **buf, size_t * n, int fd)
+static ssize_t getline_fd(char **buf, size_t * n, int fd)
 {
 	ssize_t size = 0, max = 16384, s;
 	char delim = '\n';
@@ -1324,7 +1326,7 @@ ssize_t getline_fd(char **buf, size_t * n, int fd)
 }
 
 // Allocate a null-terminated array of strings from a JSON array.
-char **json_array_of_strings_value(json_t * array)
+static char **json_array_of_strings_value(json_t * array)
 {
 	char **a = NULL;
 	json_t *value;
