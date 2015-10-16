@@ -671,11 +671,13 @@ int exec_process(json_t * config)
 			goto cleanup;
 		}
 
+		fprintf(stderr, "execute %s\n", path);
 		execvpe(path, argv, env);
 		perror("execvpe");
 		err = 1;
 	} else {
 
+		fprintf(stderr, "execute %s\n", argv[0]);
 		execvpe(argv[0], argv, env);
 		perror("execvpe");
 		err = 1;
