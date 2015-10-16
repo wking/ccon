@@ -60,7 +60,8 @@ static int set_working_directory(json_t * config);
 static int set_user_group(json_t * config);
 static int _capng_name_to_capability(const char *name);
 static int set_capabilities(json_t * config);
-static int exec_process(json_t * config);
+static int exec_container_process(json_t * config);
+static int exec_process(json_t * process);
 static void block_forever();
 static int get_namespace_type(const char *name, int *nstype);
 static int get_clone_flags(json_t * config, unsigned long *flags);
@@ -410,7 +411,7 @@ static int handle_child(json_t * config, int *to_parent, int *from_parent)
 		return 1;
 	}
 
-	if (exec_process(config)) {
+	if (exec_container_process(config)) {
 		return 1;
 	}
 
@@ -591,27 +592,32 @@ static int set_capabilities(json_t * config)
 	return 0;
 }
 
-static int exec_process(json_t * config)
+static int exec_container_process(json_t * config)
 {
-	char *path = NULL;
-	char **argv = NULL, **env = NULL;
-	json_t *process, *value;
-	size_t i;
-	int err = 0;
+	json_t *process;
 
 	process = json_object_get(config, "process");
 	if (!process) {
 		fprintf(stderr, "process not defined, blocking forever\n");
 		block_forever();
 		fprintf(stderr, "container block failed\n");
-		err = 1;
-		goto cleanup;
+		return 1;
 	}
+
+	return exec_process(process);
+}
+
+static int exec_process(json_t * process)
+{
+	char *path = NULL;
+	char **argv = NULL, **env = NULL;
+	json_t *value;
+	size_t i;
+	int err = 0;
 
 	value = json_object_get(process, "args");
 	if (!value) {
-		fprintf(stderr,
-			"process.args not specified, blocking forever\n");
+		fprintf(stderr, "args not specified, blocking forever\n");
 		block_forever();
 		fprintf(stderr, "container block failed\n");
 		err = 1;
@@ -620,7 +626,7 @@ static int exec_process(json_t * config)
 
 	argv = json_array_of_strings_value(value);
 	if (!argv) {
-		fprintf(stderr, "failed to extract process.args\n");
+		fprintf(stderr, "failed to extract args\n");
 		err = 1;
 		goto cleanup;
 	}
@@ -629,7 +635,7 @@ static int exec_process(json_t * config)
 	if (value) {
 		env = json_array_of_strings_value(value);
 		if (!env) {
-			fprintf(stderr, "failed to extract process.env\n");
+			fprintf(stderr, "failed to extract env\n");
 			err = 1;
 			goto cleanup;
 		}
