@@ -75,6 +75,7 @@ static int pivot_root_remove_old(const char *new_root);
 static int _wait(pid_t pid, const char *name);
 static ssize_t getline_fd(char **buf, size_t * n, int fd);
 static char **json_array_of_strings_value(json_t * array);
+static int close_pipe(int pipe_fd[2]);
 
 int main(int argc, char **argv)
 {
@@ -211,25 +212,11 @@ static int run_container(json_t * config)
 	err = handle_parent(config, cpid, &pipe_in[1], &pipe_out[0]);
 
  cleanup:
-	if (pipe_in[0] >= 0) {
-		if (close(pipe_in[0]) == -1) {
-			perror("close host-to-container pipe read-end");
-		}
+	if (close_pipe(pipe_in)) {
+		err = 1;
 	}
-	if (pipe_in[1] >= 0) {
-		if (close(pipe_in[1]) == -1) {
-			perror("close host-to-container pipe write-end");
-		}
-	}
-	if (pipe_out[0] >= 0) {
-		if (close(pipe_out[0]) == -1) {
-			perror("close container-to-host pipe read-end");
-		}
-	}
-	if (pipe_out[1] >= 0) {
-		if (close(pipe_out[1]) == -1) {
-			perror("close container-to-host pipe write-end");
-		}
+	if (close_pipe(pipe_out)) {
+		err = 1;
 	}
 	if (stack) {
 		free(stack);
@@ -331,25 +318,11 @@ static int child_func(void *arg)
 	}
 
  cleanup:
-	if (child_args->pipe_in[0] >= 0) {
-		if (close(child_args->pipe_in[0]) == -1) {
-			perror("close host-to-container pipe read-end");
-		}
+	if (close_pipe(child_args->pipe_in)) {
+		err = 1;
 	}
-	if (child_args->pipe_in[1] >= 0) {
-		if (close(child_args->pipe_in[1]) == -1) {
-			perror("close host-to-container pipe write-end");
-		}
-	}
-	if (child_args->pipe_out[0] >= 0) {
-		if (close(child_args->pipe_out[0]) == -1) {
-			perror("close container-to-host pipe read-end");
-		}
-	}
-	if (child_args->pipe_out[1] >= 0) {
-		if (close(child_args->pipe_out[1]) == -1) {
-			perror("close container-to-host pipe write-end");
-		}
+	if (close_pipe(child_args->pipe_out)) {
+		err = 1;
 	}
 	return err;
 }
@@ -1361,4 +1334,27 @@ static char **json_array_of_strings_value(json_t * array)
 		a = NULL;
 	}
 	return a;
+}
+
+static int close_pipe(int pipe_fd[2])
+{
+	int err = 0;
+
+	if (pipe_fd[0] >= 0) {
+		if (close(pipe_fd[0]) == -1) {
+			perror("close pipe read-end");
+			err = 1;
+		}
+		pipe_fd[0] = -1;
+	}
+
+	if (pipe_fd[1] >= 0) {
+		if (close(pipe_fd[1]) == -1) {
+			perror("close pipe write-end");
+			err = 1;
+		}
+		pipe_fd[1] = -1;
+	}
+
+	return err;
 }
