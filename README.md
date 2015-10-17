@@ -5,7 +5,8 @@ produce a lightweight tool in C that can serve as a test-bed for [Open
 Container Specification][ocs] development.  Ccon is thin wrapper
 around the underlying syscalls and kernel primitives.  It makes it
 easy to apply a given configuration, but does not have an opinion
-about what a container should look like.
+about what a container should look like (it's even less opinionated
+than [LXC][lxc.container.conf.5]).
 
 ## Table of contents
 
@@ -700,6 +701,7 @@ be distributed under the GPLv3+.
 [getcwd.3]: http://man7.org/linux/man-pages/man3/getcwd.3.html
 [stdin.3]: http://man7.org/linux/man-pages/man3/stdin.3.html
 [filesystems.5]: http://man7.org/linux/man-pages/man5/filesystems.5.html
+[lxc.container.conf.5]: https://linuxcontainers.org/lxc/manpages/man5/lxc.container.conf.5.html
 [capabilities.7]: http://man7.org/linux/man-pages/man7/capabilities.7.html
 [namespaces.7]: http://man7.org/linux/man-pages/man7/namespaces.7.html
 [pid_namespaces.7]: http://man7.org/linux/man-pages/man7/pid_namespaces.7.html
