@@ -663,13 +663,21 @@ static int exec_process(json_t * process)
 			goto cleanup;
 		}
 
-		fprintf(stderr, "execute %s\n", path);
+		fprintf(stderr, "execute [%s]", path);
+		for (i = 0; argv[i]; i++) {
+			fprintf(stderr, " %s", argv[i]);
+		}
+		fprintf(stderr, "\n");
 		execvpe(path, argv, env);
 		perror("execvpe");
 		err = 1;
 	} else {
 
-		fprintf(stderr, "execute %s\n", argv[0]);
+		fprintf(stderr, "execute");
+		for (i = 0; argv[i]; i++) {
+			fprintf(stderr, " %s", argv[i]);
+		}
+		fprintf(stderr, "\n");
 		execvpe(argv[0], argv, env);
 		perror("execvpe");
 		err = 1;
