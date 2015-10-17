@@ -1,0 +1,48 @@
+{
+  "version": "0.1.0",
+  "namespaces": {
+    "user": {
+      "setgroups": false,
+      "uidMappings": [
+        {
+          "containerID": 0,
+          "hostID": 0,
+          "size": 1
+        }
+      ],
+      "gidMappings": [
+        {
+          "containerID": 0,
+          "hostID": 0,
+          "size": 1
+        }
+      ]
+    },
+    "net": {}
+  },
+  "process": {
+    "capabilities": [
+      "CAP_NET_BIND_SERVICE"
+    ],
+    "args": ["nc", "-l", "-p", "80"]
+  },
+  "hooks": {
+    "pre-start": [
+      {"args": ["brctl", "addbr", "ccon-ex-bridge"]},
+      {"args": ["ip", "addr", "add", "10.0.0.1/24", "dev", "ccon-ex-bridge"]},
+      {"args": ["ip", "link", "set", "dev", "ccon-ex-bridge", "up"]},
+      {"args": ["ip", "link", "add", "dev", "ccon-ex-veth0", "type", "veth", "peer", "name", "ccon-ex-veth1"]},
+      {"args": ["ip", "link", "set", "ccon-ex-veth0", "up", "master", "ccon-ex-bridge"]},
+      {"args": ["sh", "-c", "ip link set ccon-ex-veth1 netns $(cat)"]},
+      {"args": ["sh", "-c", "nsenter -t $(cat) -n -U --preserve-credentials ip link set dev lo up"]},
+      {"args": ["sh", "-c", "nsenter -t $(cat) -n -U --preserve-credentials ip addr add 10.0.0.2/24 dev ccon-ex-veth1"]},
+      {"args": ["sh", "-c", "nsenter -t $(cat) -n -U --preserve-credentials ip link set dev ccon-ex-veth1 up address 00:00:6c:00:00:00"]},
+      {"args": ["sh", "-c", "nsenter -t $(cat) -n -U --preserve-credentials ip route add default via 10.0.0.1"]}
+    ],
+    "post-stop": [
+      {"args": ["ip", "link", "del", "dev", "ccon-ex-veth0"]},
+      {"args": ["ip", "link", "set", "dev", "ccon-ex-bridge", "down"]},
+      {"args": ["brctl", "delbr", "ccon-ex-bridge"]}
+    ]
+  }
+}
