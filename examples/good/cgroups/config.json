@@ -1,0 +1,61 @@
+{
+  "version": "0.1.0",
+  "namespaces": {
+    "user": {
+      "setgroups": false,
+      "uidMappings": [
+        {
+          "containerID": 0,
+          "hostID": 1000,
+          "size": 1
+        }
+      ],
+      "gidMappings": [
+        {
+          "containerID": 0,
+          "hostID": 1000,
+          "size": 1
+        }
+      ]
+    },
+    "mount": {
+      "mounts": [
+        {
+          "target": "/proc",
+          "type": "proc",
+          "flags": [
+            "MS_PRIVATE",
+            "MS_REC"
+          ]
+        },
+        {
+          "target": "/proc",
+          "type": "proc",
+          "flags": [
+            "MS_NOSUID",
+            "MS_NOEXEC",
+            "MS_NODEV"
+          ]
+        }
+      ]
+    },
+    "pid": {}
+  },
+  "process": {
+    "user": {
+      "uid": 0,
+      "gid": 0
+    },
+    "capabilities": [],
+    "args": ["ps", "-o", "pid,comm,cgroup"]
+  },
+  "hooks": {
+    "pre-start": [
+      {"args": ["mkdir", "/sys/fs/cgroup/freezer/ccon-ex/ps-ex"]},
+      {"args": ["tee", "/sys/fs/cgroup/freezer/ccon-ex/ps-ex/cgroup.procs"]}
+    ],
+    "post-stop": [
+      {"args": ["rmdir", "/sys/fs/cgroup/freezer/ccon-ex/ps-ex"]}
+    ]
+  }
+}

@@ -9,3 +9,5 @@ Examples of successful patterns:
 * Unprivileged user calling ccon:
   * [Bind to a low numbered port in a new network namespace](net-new)
     (via a new user namespace).
+  * [Launch a container process in a new freezer cgroup, removing that
+    cgroup on exit](cgroups).
