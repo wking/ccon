@@ -55,7 +55,7 @@
       {"args": ["tee", "/sys/fs/cgroup/freezer/ccon-ex/ps-ex/cgroup.procs"]}
     ],
     "post-stop": [
-      {"args": ["rmdir", "/sys/fs/cgroup/freezer/ccon-ex/ps-ex"]}
+      {"args": ["find", "/sys/fs/cgroup/freezer/ccon-ex/ps-ex", "-type", "d", "-print", "-delete"]}
     ]
   }
 }

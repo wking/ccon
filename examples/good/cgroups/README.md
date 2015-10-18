@@ -49,6 +49,14 @@ example as an unprivileged user.  If you don't, you'll need to elevate
 your privileges (with [`sudo`][sudo.8] or by asking your sysadmin) to
 create such a subgroup.
 
+## Hook dependencies
+
+* [GNU Core Utilities][coreutils] for [`mkdir`][mkdir.1] and
+  [`tee`][tee.1].
+* [GNU Find Utilities][findutils] for [`find`][find.1].
+
+[coreutils]: http://www.gnu.org/software/coreutils/coreutils.html
+[findutils]: http://www.gnu.org/software/findutils/findutils.html
 [procps]: https://gitlab.com/procps-ng/procps
 
 [cgroups]: https://www.kernel.org/doc/Documentation/cgroups/cgroups.txt
@@ -56,9 +64,11 @@ create such a subgroup.
 
 [chmod.1]: http://man7.org/linux/man-pages/man1/chmod.1.html
 [chown.1]: http://man7.org/linux/man-pages/man1/chown.1.html
+[find.1]: http://man7.org/linux/man-pages/man1/find.1.html
 [mkdir.1]: http://man7.org/linux/man-pages/man1/mkdir.1.html
 [ps.1]: http://man7.org/linux/man-pages/man1/ps.1.html
 [rmdir.1]: http://man7.org/linux/man-pages/man1/rmdir.1.html
+[tee.1]: http://man7.org/linux/man-pages/man1/tee.1.html
 [namespaces.7]: http://man7.org/linux/man-pages/man7/namespaces.7.html
 [user_namespaces.7]: http://man7.org/linux/man-pages/man7/user_namespaces.7.html
 [sudo.8]: http://www.sudo.ws/man/1.8.14/sudo.man.html
