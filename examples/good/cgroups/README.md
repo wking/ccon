@@ -13,7 +13,10 @@ namespaces:
   subcgroups.  Having a PID namespace doesn't guarantee that
   additional processes won't join the freezer cgroup without also
   joining the PID namespace, but having the PID namespace available
-  makes it easy for cooperative processes to play nice.
+  makes it easy for cooperative processes to play nice.  Using a
+  [`freeze-and-signal`](freeze-and-signal) post-stop hook helps finish
+  off processes that join the freezer cgroup (or any of its
+  ancestors), but that approach isn't atomic.
 
 * A [mount namespace][namespaces.7], to [get a local `/proc` for the
   PID namespace](../../../README.md#pid-namespace).
@@ -51,24 +54,33 @@ create such a subgroup.
 
 ## Hook dependencies
 
-* [GNU Core Utilities][coreutils] for [`mkdir`][mkdir.1] and
-  [`tee`][tee.1].
+* A POSIX shell (for [`freeze-and-signal`](freeze-and-signal)).
+* [GNU Core Utilities][coreutils] for [`echo`][echo.1],
+  [`cat`][cat.1], [`mkdir`][mkdir.1], [`sleep`][sleep.1],
+  [`tee`][tee.1], and [`test`][test.1].
 * [GNU Find Utilities][findutils] for [`find`][find.1].
+* [`kill`][kill.1] from [coreutils][], [procps][], or [util-linux][].
 
 [coreutils]: http://www.gnu.org/software/coreutils/coreutils.html
 [findutils]: http://www.gnu.org/software/findutils/findutils.html
 [procps]: https://gitlab.com/procps-ng/procps
+[util-linux]: https://www.kernel.org/pub/linux/utils/util-linux/
 
 [cgroups]: https://www.kernel.org/doc/Documentation/cgroups/cgroups.txt
 [freezer]: https://www.kernel.org/doc/Documentation/cgroups/freezer-subsystem.txt
 
+[cat.1]: http://man7.org/linux/man-pages/man1/cat.1.html
 [chmod.1]: http://man7.org/linux/man-pages/man1/chmod.1.html
 [chown.1]: http://man7.org/linux/man-pages/man1/chown.1.html
+[echo.1]: http://man7.org/linux/man-pages/man1/echo.1.html
 [find.1]: http://man7.org/linux/man-pages/man1/find.1.html
+[kill.1]: http://man7.org/linux/man-pages/man1/kill.1.html
 [mkdir.1]: http://man7.org/linux/man-pages/man1/mkdir.1.html
 [ps.1]: http://man7.org/linux/man-pages/man1/ps.1.html
 [rmdir.1]: http://man7.org/linux/man-pages/man1/rmdir.1.html
+[sleep.1]: http://man7.org/linux/man-pages/man1/sleep.1.html
 [tee.1]: http://man7.org/linux/man-pages/man1/tee.1.html
+[test.1]: http://man7.org/linux/man-pages/man1/test.1.html
 [namespaces.7]: http://man7.org/linux/man-pages/man7/namespaces.7.html
 [user_namespaces.7]: http://man7.org/linux/man-pages/man7/user_namespaces.7.html
 [sudo.8]: http://www.sudo.ws/man/1.8.14/sudo.man.html

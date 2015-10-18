@@ -1,0 +1,44 @@
+#!/bin/sh
+#
+# freeze-and-signal(1) - Freeze and signal processes in a freezer cgroup
+# Copyright (C) 2015 W. Trevor King <wking@tremily.us>
+#
+# This program is free software: you can redistribute it and/or modify
+# it under the terms of the GNU General Public License as published by
+# the Free Software Foundation, either version 3 of the License, or
+# (at your option) any later version.
+#
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU General Public License for more details.
+#
+# You should have received a copy of the GNU General Public License
+# along with this program.  If not, see <http://www.gnu.org/licenses/>.
+
+SIGNAL="${1}"
+CGROUP="${2}"
+echo "freezing ${CGROUP}" >&2 &&
+echo FROZEN >"${CGROUP}/freezer.state" &&
+STATE=$(cat "${CGROUP}/freezer.state") &&
+echo "waiting for ${CGROUP} to freeze" >&2 &&
+while test 'FROZEN' != "${STATE}"
+do
+	sleep 0.1 &&
+	STATE=$(cat "${CGROUP}/freezer.state")
+done &&
+for PROC_FILE in $(find "${CGROUP}" -depth -name cgroup.procs)
+do
+	PIDS=$(cat "${PROC_FILE}") &&
+	if test -n "${PIDS}"
+	then
+		echo "sending ${1} to processes in ${PROC_FILE}" >&2 &&
+		kill "-{$1}" ${PIDS}
+	else
+		echo "no processes in ${PROC_FILE}" >&2
+	fi
+done &&
+echo "thawing ${CGROUP}" >&2 &&
+echo THAWED >"${CGROUP}/freezer.state" &&
+sleep 0.1 &&
+cat "${CGROUP}/freezer.state" >&2

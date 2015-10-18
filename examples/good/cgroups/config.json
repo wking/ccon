@@ -55,6 +55,7 @@
       {"args": ["tee", "/sys/fs/cgroup/freezer/ccon-ex/ps-ex/cgroup.procs"]}
     ],
     "post-stop": [
+      {"args": ["./freeze-and-signal", "KILL", "/sys/fs/cgroup/freezer/ccon-ex/ps-ex"]},
       {"args": ["find", "/sys/fs/cgroup/freezer/ccon-ex/ps-ex", "-type", "d", "-print", "-delete"]}
     ]
   }
