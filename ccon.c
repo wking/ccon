@@ -81,10 +81,17 @@ static int close_pipe(int pipe_fd[2]);
 
 int main(int argc, char **argv)
 {
-	char *config_path = "config.json";
+	const char *config_path = "config.json";
 	int i, err;
 	json_t *config, *value;
 	json_error_t error;
+
+	if (argc == 2) {
+		config_path = argv[1];
+	} else if (argc > 2) {
+		fprintf(stderr, "usage: %s [CONFIG_PATH]\n", argv[0]);
+		return 1;
+	}
 
 	config = json_load_file(config_path, JSON_REJECT_DUPLICATES, &error);
 	if (!config) {

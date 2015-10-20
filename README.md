@@ -84,6 +84,26 @@ namespace, so ccon's mount listing falls under
 launch an interactive [BusyBox][] shell in new namespaces (you may
 need to adjust the **`hostID`** entries to match `id -u` and `id -g`).
 
+You can load the configuration from a different file by giving its
+path on the command line.  For example:
+
+```
+$ ccon path/to/config.json
+```
+
+or:
+
+```
+$ ccon /dev/fd/4 4<path/to/config.json
+```
+
+or (using [Bash][bash]'s [process
+substitution][bash-process-substitution]):
+
+```
+$ ccon <(echo '{"version": "0.1.0", "process": …}')
+```
+
 There are additional examples focusing on specific tasks in the
 [`examples/`](examples) directory.
 
@@ -657,6 +677,8 @@ be distributed under the GPLv3+.
 
 [ocs]: https://github.com/opencontainers/specs
 
+[bash]: https://www.gnu.org/software/bash/
+[bash-process-substitution]: https://www.gnu.org/software/bash/manual/html_node/Process-Substitution.html
 [BusyBox]: http://www.busybox.net/
 [GCC]: http://gcc.gnu.org/
 [glibc-license]: https://sourceware.org/git/?p=glibc.git;a=blob;f=COPYING.LIB;hb=glibc-2.22
