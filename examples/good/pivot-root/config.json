@@ -1,0 +1,98 @@
+{
+  "version": "0.1.0",
+  "namespaces": {
+    "user": {
+      "setgroups": false,
+      "uidMappings": [
+        {
+          "containerID": 0,
+          "hostID": 1000,
+          "size": 1
+        }
+      ],
+      "gidMappings": [
+        {
+          "containerID": 0,
+          "hostID": 1000,
+          "size": 1
+        }
+      ]
+    },
+    "mount": {
+      "mounts": [
+        {
+          "source": "rootfs",
+          "target": "rootfs",
+          "flags": [
+            "MS_BIND"
+          ]
+        },
+        {
+          "source": "/dev",
+          "target": "rootfs/dev",
+          "flags": [
+            "MS_BIND",
+            "MS_REC"
+          ]
+        },
+        {
+          "target": "rootfs/proc",
+          "type": "proc"
+        },
+        {
+          "target": "rootfs/sys",
+          "type": "sysfs"
+        },
+        {
+          "source": "/etc/resolv.conf",
+          "target": "rootfs/etc/resolv.conf",
+          "flags": [
+            "MS_BIND"
+          ]
+        },
+        {
+          "source": "root",
+          "target": "rootfs/root",
+          "flags": [
+            "MS_BIND"
+          ]
+        },
+        {
+          "source": "rootfs",
+          "type": "pivot-root"
+        },
+        {
+          "target": "/",
+          "flags": [
+            "MS_REMOUNT",
+            "MS_RDONLY",
+            "MS_BIND"
+          ]
+        },
+        {
+          "target": "/run",
+          "type": "tmpfs"
+        },
+        {
+          "target": "/tmp",
+          "type": "tmpfs"
+        }
+      ]
+    },
+    "pid": {},
+    "net": {}
+  },
+  "process": {
+    "user": {
+      "uid": 0,
+      "gid": 0
+    },
+    "cwd": "/root",
+    "capabilities": [],
+    "args": ["busybox", "sh"],
+    "env": [
+      "PATH=/bin:/usr/bin",
+      "TERM=xterm"
+    ]
+  }
+}
