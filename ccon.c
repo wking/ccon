@@ -1043,7 +1043,7 @@ static int set_user_map(json_t * user, pid_t cpid, const char *key,
 			err = 1;
 			goto cleanup;
 		}
-		container = json_integer_value(value);
+		container = (uid_t) json_integer_value(value);
 
 		value = json_object_get(mapping, "hostID");
 		if (!value) {
@@ -1053,7 +1053,7 @@ static int set_user_map(json_t * user, pid_t cpid, const char *key,
 			err = 1;
 			goto cleanup;
 		}
-		host = json_integer_value(value);
+		host = (uid_t) json_integer_value(value);
 
 		value = json_object_get(mapping, "size");
 		if (!value) {
@@ -1063,7 +1063,7 @@ static int set_user_map(json_t * user, pid_t cpid, const char *key,
 			err = 1;
 			goto cleanup;
 		}
-		size = json_integer_value(value);
+		size = (int)json_integer_value(value);
 
 		fprintf(stderr, "write '%u %u %d' to %s\n",
 			(unsigned int)container, (unsigned int)host, size,
