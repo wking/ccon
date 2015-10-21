@@ -256,11 +256,12 @@ static int handle_parent(json_t * config, pid_t cpid, int *to_child,
 	}
 	line = NULL;
 
-	len = getline_fd(&line, &allocated, *from_child);
-	if (len == -1) {
+	n = getline_fd(&line, &allocated, *from_child);
+	if (n == -1) {
 		err = 1;
 		goto cleanup;
 	}
+	len = (size_t) n;
 	if (strncmp
 	    (CONTAINER_SETUP_COMPLETE, line,
 	     strlen(CONTAINER_SETUP_COMPLETE)) != 0) {
@@ -358,11 +359,12 @@ static int handle_child(json_t * config, int *to_parent, int *from_parent)
 	ssize_t n;
 	int err = 0, exec_fd = -1;
 
-	len = getline_fd(&line, &allocated, *from_parent);
-	if (len == -1) {
+	n = getline_fd(&line, &allocated, *from_parent);
+	if (n == -1) {
 		err = 1;
 		goto cleanup;
 	}
+	len = (size_t) n;
 	if (strncmp
 	    (USER_NAMESPACE_MAPPING_COMPLETE, line,
 	     strlen(USER_NAMESPACE_MAPPING_COMPLETE)) != 0) {
@@ -409,11 +411,12 @@ static int handle_child(json_t * config, int *to_parent, int *from_parent)
 
 	/* block while parent runs pre-start hooks */
 
-	len = getline_fd(&line, &allocated, *from_parent);
-	if (len == -1) {
+	n = getline_fd(&line, &allocated, *from_parent);
+	if (n == -1) {
 		err = 1;
 		goto cleanup;
 	}
+	len = (size_t) n;
 	if (strncmp(EXEC_PROCESS, line, strlen(EXEC_PROCESS)) != 0) {
 		fprintf(stderr, "unexpected message from host(%d): %.*s\n",
 			(int)len, (int)len - 1, line);
