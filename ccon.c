@@ -240,6 +240,7 @@ static int handle_parent(json_t * config, pid_t cpid, int *to_child,
 {
 	char *line = NULL;
 	size_t allocated = 0, len;
+	ssize_t n;
 	int err = 0;
 
 	if (set_user_namespace_mappings(config, cpid)) {
@@ -248,7 +249,8 @@ static int handle_parent(json_t * config, pid_t cpid, int *to_child,
 
 	line = USER_NAMESPACE_MAPPING_COMPLETE;
 	len = strlen(line);
-	if (write(*to_child, line, len) != (ssize_t) len) {
+	n = write(*to_child, line, len);
+	if (n < 0 || (size_t) n != len) {
 		perror("write to container");
 		return 1;
 	}
@@ -287,7 +289,8 @@ static int handle_parent(json_t * config, pid_t cpid, int *to_child,
 
 	line = EXEC_PROCESS;
 	len = strlen(line);
-	if (write(*to_child, line, len) != len) {
+	n = write(*to_child, line, len);
+	if (n < 0 || (size_t) n != len) {
 		perror("write to container");
 		return 1;
 	}
@@ -352,6 +355,7 @@ static int handle_child(json_t * config, int *to_parent, int *from_parent)
 {
 	char *line = NULL;
 	size_t allocated = 0, len;
+	ssize_t n;
 	int err = 0, exec_fd = -1;
 
 	len = getline_fd(&line, &allocated, *from_parent);
@@ -386,7 +390,8 @@ static int handle_child(json_t * config, int *to_parent, int *from_parent)
 
 	line = CONTAINER_SETUP_COMPLETE;
 	len = strlen(line);
-	if (write(*to_parent, line, len) != len) {
+	n = write(*to_parent, line, len);
+	if (n < 0 || (size_t) n != len) {
 		perror("write to host");
 		line = NULL;	// don't free a string literal
 		err = 1;
