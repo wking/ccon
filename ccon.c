@@ -1562,7 +1562,7 @@ static ssize_t getline_fd(char **buf, size_t * n, int fd)
 	char delim = '\n';
 	size_t block = 512;
 	do {
-		if (size == *n) {
+		if ((size_t) size == *n) {
 			char *b = realloc(*buf, *n + block);
 			if (b == NULL) {
 				perror("realloc");
