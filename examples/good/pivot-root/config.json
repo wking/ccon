@@ -40,8 +40,12 @@
           "type": "proc"
         },
         {
+          "source": "/sys",
           "target": "rootfs/sys",
-          "type": "sysfs"
+          "flags": [
+            "MS_BIND",
+            "MS_REC"
+          ]
         },
         {
           "source": "/etc/resolv.conf",
@@ -79,8 +83,7 @@
         }
       ]
     },
-    "pid": {},
-    "net": {}
+    "pid": {}
   },
   "process": {
     "user": {

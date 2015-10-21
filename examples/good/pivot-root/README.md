@@ -15,20 +15,12 @@ This example creates several new namespaces:
   [`CAP_SYS_ADMIN`][capabilities.7] to [mount
   `/proc`][e51db735-proc-cap-pidns].
 
-* A [network namespace][namespaces.7], so we can mount sysfs (see the
-  check in [7dc5dbc8][], [sysfs: Restrict mounting
-  sysfs][7dc5dbc8-thread], 2013-03-25).  If you actually need network
-  access, you'll need to do something like the [veth
-  example](../net-veth-root).  If you don't have the
-  [`CAP_NET_ADMIN`][capabilities.7] required by that example, you'll
-  have to remove the sysfs mount and make due without it.
-
-We mount `rootfs/proc` and `rootfs/sys` before the pivot to pass the
-`fs_fully_visible` check that landed in [e51db735][] ([userns: Better
-restrictions on when proc and sysfs can be mounted][e51db735-thread],
-2013-08-27) and is explicitly applied to proc and sysfs in
-[1b852bce][] ([mnt: Refactor the logic for mounting sysfs and proc in
-a user namespace][1b852bce-thread], 2015-05-09).
+We mount `rootfs/proc` before the pivot to pass the `fs_fully_visible`
+check that landed in [e51db735][] ([userns: Better restrictions on
+when proc and sysfs can be mounted][e51db735-thread], 2013-08-27) and
+is explicitly applied to proc in [1b852bce][] ([mnt: Refactor the
+logic for mounting sysfs and proc in a user
+namespace][1b852bce-thread], 2015-05-09).
 
 ## Mounts
 
@@ -45,8 +37,10 @@ a user namespace][1b852bce-thread], 2015-05-09).
    allow mknod in user namespaces][mknod-user-namespace]).
 3. `/proc` for tools like [`ps`][ps.1] and [`sysctl`][sysctl.8] that
    need entries in the proc filesytem.
-4. `/sys` for tools like [`lm_sensors`][lm_sensors] that need
-   access to kernel subsystem information.
+4. [`/sys`][sys] for tools like [`lm_sensors`][lm_sensors] that need
+   access to kernel subsystem information.  This is recursively bound
+   from the host mount namespace to pull in submounts like
+   [`/sys/fs/cgroup`][cgroups].
 5. `/etc/resolv.conf` in case [someone sets up a veth route out of the
    network namespace](../net-veth-root).
 6. `/root` for a writable scratch space that's persisted on disk.
@@ -56,23 +50,6 @@ a user namespace][1b852bce-thread], 2015-05-09).
 9. [`/run`][run] for compliance with the [FHS 3.0][FHS-3.0].
 10. [`/tmp`][tmp] for compliance with the [FHS 3.0][FHS-3.0].
 
-## Outstanding issues
-
-### Mounting cgroups
-
-The sysfs mount is owned by root (which is mapped to the [overflow
-user 65534 in the user namespace][user_namespaces.7]), so the
-container process cannot create new directories underneath `/sys`.
-And mounting a [cgroup][cgroups] filesystem to an existing directory
-inside the container failed with:
-
-    / # mkdir /tmp/cgroup
-    / # mount -n -t cgroup none /tmp/cgroup
-    mount: permission denied (are you root?)
-
-even when I retained all my [user-namespace-granted
-capabailities][user_namespaces.7].
-
 [BusyBox]: http://www.busybox.net/
 [cgroups]: https://www.kernel.org/doc/Documentation/cgroups/cgroups.txt
 [dev]: http://refspecs.linuxfoundation.org/FHS_3.0/fhs/ch03s06.html
@@ -80,14 +57,13 @@ capabailities][user_namespaces.7].
 [FHS-3.0]: http://refspecs.linuxfoundation.org/FHS_3.0/fhs/index.html
 [lm_sensors]: http://www.lm-sensors.org/
 [run]: http://refspecs.linuxfoundation.org/FHS_3.0/fhs/ch03s15.html
+[sys]: http://refspecs.linuxfoundation.org/FHS_3.0/fhs/ch06.html#sysKernelAndSystemInformation
 [tmp]: http://refspecs.linuxfoundation.org/FHS_3.0/fhs/ch03s18.html
 
 [mknod-user-namespace]: http://thread.gmane.org/gmane.linux.file-systems/72682/focus=72684
 [e51db735]: https://git.kernel.org/cgit/linux/kernel/git/torvalds/linux.git/commit/?id=e51db73532955dc5eaba4235e62b74b460709d5b
 [e51db735-thread]: http://thread.gmane.org/gmane.linux.file-systems/77413
 [e51db735-proc-cap-pidns]: https://git.kernel.org/cgit/linux/kernel/git/torvalds/linux.git/diff/fs/proc/root.c?id=e51db73532955dc5eaba4235e62b74b460709d5b
-[7dc5dbc8]: https://git.kernel.org/cgit/linux/kernel/git/torvalds/linux.git/commit/?id=7dc5dbc879bd0779924b5132a48b731a0bc04a1e
-[7dc5dbc8-thread]: http://thread.gmane.org/gmane.linux.file-systems/77413/focus=77414
 [1b852bce]: https://git.kernel.org/cgit/linux/kernel/git/torvalds/linux.git/commit/?id=1b852bceb0d111e510d1a15826ecc4a19358d512
 [1b852bce-thread]: http://thread.gmane.org/gmane.linux.kernel.containers/29284/focus=29285
 
