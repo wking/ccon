@@ -93,6 +93,7 @@
     "cwd": "/root",
     "capabilities": [],
     "args": ["busybox", "sh"],
+    "host": true,
     "env": [
       "PATH=/bin:/usr/bin",
       "TERM=xterm"

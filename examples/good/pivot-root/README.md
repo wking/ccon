@@ -1,7 +1,11 @@
 Launch a container process that [pivots][pivot_root.2] to a local
-root.  You must copy a static [BusyBox][] binary into
-`rootfs/bin/busybox` before executing this bundle (I didn't see the
-point of committing it to the Git repository)
+root.
+
+The container launches a static [BusyBox][] from your *host* mount
+namespace, you you'll have to have `busybox` somewhere in your host
+[`PATH`][environ.7].  Alternatively, you can remove
+[**`process.host`**](../../../README.md#host) and copy `busybox` into
+`rootfs/bin` before executing the bundle.
 
 This example creates several new namespaces:
 
@@ -71,6 +75,7 @@ namespace][1b852bce-thread], 2015-05-09).
 [ps.1]: http://man7.org/linux/man-pages/man1/ps.1.html
 [pivot_root.2]: http://man7.org/linux/man-pages/man2/pivot_root.2.html
 [capabilities.7]: http://man7.org/linux/man-pages/man7/capabilities.7.html
+[environ.7]: http://man7.org/linux/man-pages/man7/environ.7.html
 [namespaces.7]: http://man7.org/linux/man-pages/man7/namespaces.7.html
 [pid_namespaces.7]: http://man7.org/linux/man-pages/man7/pid_namespaces.7.html
 [user_namespaces.7]: http://man7.org/linux/man-pages/man7/user_namespaces.7.html

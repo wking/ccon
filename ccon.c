@@ -60,8 +60,9 @@ static int set_working_directory(json_t * config);
 static int set_user_group(json_t * config);
 static int _capng_name_to_capability(const char *name);
 static int set_capabilities(json_t * config);
-static int exec_container_process(json_t * config);
-static int exec_process(json_t * process);
+static int exec_container_process(json_t * config, int exec_fd);
+static int exec_process(json_t * process, int exec_fd);
+static int get_host_exec_fd(json_t * config, int *exec_fd);
 static int run_hooks(json_t * config, const char *name, pid_t cpid);
 static void block_forever();
 static int get_namespace_type(const char *name, int *nstype);
@@ -74,6 +75,7 @@ static int set_user_setgroups(json_t * user, pid_t cpid);
 static int get_mount_flag(const char *name, unsigned long *flag);
 static int handle_mounts(json_t * config);
 static int pivot_root_remove_old(const char *new_root);
+static int open_in_path(const char *name, int flags);
 static int _wait(pid_t pid, const char *name);
 static ssize_t getline_fd(char **buf, size_t * n, int fd);
 static char **json_array_of_strings_value(json_t * array);
@@ -350,7 +352,7 @@ static int handle_child(json_t * config, int *to_parent, int *from_parent)
 {
 	char *line = NULL;
 	size_t allocated = 0, len;
-	int err = 0;
+	int err = 0, exec_fd = -1;
 
 	len = getline_fd(&line, &allocated, *from_parent);
 	if (len == -1) {
@@ -368,12 +370,18 @@ static int handle_child(json_t * config, int *to_parent, int *from_parent)
 	allocated = 0;
 	line = NULL;
 
-	if (join_namespaces(config)) {
+	if (get_host_exec_fd(config, &exec_fd)) {
 		return 1;
 	}
 
+	if (join_namespaces(config)) {
+		err = 1;
+		goto cleanup;
+	}
+
 	if (handle_mounts(config)) {
-		return 1;
+		err = 1;
+		goto cleanup;
 	}
 
 	line = CONTAINER_SETUP_COMPLETE;
@@ -413,27 +421,36 @@ static int handle_child(json_t * config, int *to_parent, int *from_parent)
 	if (close(*from_parent) == -1) {
 		perror("close host-to-container pipe read-end");
 		*from_parent = -1;
-		return 1;
+		err = 1;
+		goto cleanup;
 	}
 	*from_parent = -1;
 
 	if (set_working_directory(config)) {
-		return 1;
+		err = 1;
+		goto cleanup;
 	}
 
 	if (set_user_group(config)) {
-		return 1;
+		err = 1;
+		goto cleanup;
 	}
 
 	if (set_capabilities(config)) {
-		return 1;
+		err = 1;
+		goto cleanup;
 	}
 
-	if (exec_container_process(config)) {
-		return 1;
-	}
+	exec_container_process(config, exec_fd);
+	err = 1;
 
  cleanup:
+	if (exec_fd >= 0) {
+		if (close(exec_fd)) {
+			perror("close user-specified executable file");
+			err = 1;
+		}
+	}
 	if (line != NULL) {
 		free(line);
 	}
@@ -610,7 +627,7 @@ static int set_capabilities(json_t * config)
 	return 0;
 }
 
-static int exec_container_process(json_t * config)
+static int exec_container_process(json_t * config, int exec_fd)
 {
 	json_t *process;
 
@@ -622,10 +639,10 @@ static int exec_container_process(json_t * config)
 		return 1;
 	}
 
-	return exec_process(process);
+	return exec_process(process, exec_fd);
 }
 
-static int exec_process(json_t * process)
+static int exec_process(json_t * process, int exec_fd)
 {
 	char *path = NULL;
 	char **argv = NULL, **env = NULL;
@@ -661,6 +678,18 @@ static int exec_process(json_t * process)
 		env = environ;
 	}
 
+	if (exec_fd >= 0) {
+		fprintf(stderr, "execute host executable:");
+		for (i = 0; argv[i]; i++) {
+			fprintf(stderr, " %s", argv[i]);
+		}
+		fprintf(stderr, "\n");
+		fexecve(exec_fd, argv, env);
+		perror("fexecve");
+		err = 1;
+		goto cleanup;
+	}
+
 	value = json_object_get(process, "path");
 	if (value) {
 		path = strdup(json_string_value(value));
@@ -670,7 +699,7 @@ static int exec_process(json_t * process)
 			goto cleanup;
 		}
 
-		fprintf(stderr, "execute [%s]", path);
+		fprintf(stderr, "execute [%s]:", path);
 		for (i = 0; argv[i]; i++) {
 			fprintf(stderr, " %s", argv[i]);
 		}
@@ -680,7 +709,7 @@ static int exec_process(json_t * process)
 		err = 1;
 	} else {
 
-		fprintf(stderr, "execute");
+		fprintf(stderr, "execute:");
 		for (i = 0; argv[i]; i++) {
 			fprintf(stderr, " %s", argv[i]);
 		}
@@ -707,6 +736,53 @@ static int exec_process(json_t * process)
 		free(path);
 	}
 	return err;
+}
+
+static int get_host_exec_fd(json_t * config, int *exec_fd)
+{
+	json_t *process, *v1, *v2;
+	const char *arg0;
+
+	process = json_object_get(config, "process");
+	if (!process) {
+		return 0;
+	}
+
+	v1 = json_object_get(process, "host");
+	if (!v1 || !json_boolean_value(v1)) {
+		return 0;
+	}
+
+	v1 = json_object_get(process, "path");
+	if (v1) {
+		arg0 = json_string_value(v1);
+		if (!arg0) {
+			fprintf(stderr, "failed to extract process.path\n");
+			return 1;
+		}
+	} else {
+		v1 = json_object_get(process, "args");
+		if (!v1) {
+			return 0;
+		}
+		v2 = json_array_get(v1, 0);
+		if (!v2) {
+			fprintf(stderr, "failed to extract process.args[0]\n");
+			return 1;
+		}
+		arg0 = json_string_value(v2);
+		if (!arg0) {
+			fprintf(stderr, "failed to extract process.args[0]\n");
+			return 1;
+		}
+	}
+
+	*exec_fd = open_in_path(arg0, O_RDONLY | O_CLOEXEC);
+	if (*exec_fd == -1) {
+		return 1;
+	}
+
+	return 0;
 }
 
 static int run_hooks(json_t * config, const char *name, pid_t cpid)
@@ -771,7 +847,7 @@ static int run_hooks(json_t * config, const char *name, pid_t cpid)
 					return 1;
 				}
 			}
-			exec_process(hook);
+			exec_process(hook, -1);
 			close_pipe(pipe_fd);
 			return 1;
 		}
@@ -1282,6 +1358,103 @@ static int handle_mounts(json_t * config)
 	}
 
 	return 0;
+}
+
+static int open_in_path(const char *name, int flags)
+{
+	const char *p;
+	char *paths = NULL, *paths2, *path;
+	size_t i;
+	int fd;
+
+	if (name[0] == '/') {
+		fprintf(stderr,
+			"open container-process executable from host %s\n",
+			name);
+		fd = open(name, flags);
+		if (fd == -1) {
+			perror("open");
+			return -1;
+		}
+		return fd;
+	}
+
+	path = malloc(sizeof(char) * MAX_PATH);
+	if (!path) {
+		perror("malloc");
+		return -1;
+	}
+	memset(path, 0, sizeof(char) * MAX_PATH);
+
+	p = strchr(name, '/');
+	if (p) {
+		if (!getcwd(path, MAX_PATH)) {
+			perror("getcwd");
+			goto cleanup;
+		}
+		i = strlen(path);
+		if (i + strlen(name) + 2 > MAX_PATH) {
+			fprintf(stderr,
+				"failed to format relative path (needed a buffer with %d byes)\n",
+				(int)(i + strlen(name) + 2));
+			goto cleanup;
+		}
+		path[i++] = '/';
+		strcpy(path + i, name);
+		fprintf(stderr,
+			"open container-process executable from host %s\n",
+			path);
+		fd = open(path, flags);
+		if (fd == -1) {
+			perror("open");
+			return -1;
+		}
+		free(path);
+		return fd;
+	}
+
+	paths = getenv("PATH");
+	if (!paths) {
+		fprintf(stderr, "failed to get host PATH\n");
+		goto cleanup;
+	}
+	paths = strdup(paths);
+	if (!paths) {
+		perror("strdup");
+		goto cleanup;
+	}
+
+	paths2 = paths;
+	while ((p = strtok(paths2, ":"))) {
+		paths2 = NULL;
+		i = strlen(p);
+		if (i + strlen(name) + 2 > MAX_PATH) {
+			fprintf(stderr,
+				"failed to format relative path (needed a buffer with %d byes)\n",
+				(int)(i + strlen(name) + 2));
+			goto cleanup;
+		}
+		strcpy(path, p);
+		path[i++] = '/';
+		strcpy(path + i, name);
+		fd = open(path, flags);
+		if (fd >= 0) {
+			fprintf(stderr,
+				"open container-process executable from host %s\n",
+				path);
+			free(path);
+			return fd;
+		}
+	}
+
+	fprintf(stderr, "failed to find %s in the host PATH\n", name);
+
+ cleanup:
+	if (paths) {
+		free(paths);
+	}
+	free(path);
+	return -1;
 }
 
 static int _wait(pid_t pid, const char *name)
