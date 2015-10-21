@@ -1496,7 +1496,7 @@ static int pivot_root_remove_old(const char *new_root)
 {
 	char put_old[MAX_PATH];
 	char *old_basename;
-	int err = 0, fd, size;
+	int err = 0, size;
 
 	size = snprintf(put_old, MAX_PATH, "%s/pivot-root.XXXXXX", new_root);
 	if (size < 0) {
