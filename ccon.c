@@ -79,7 +79,7 @@ static int open_in_path(const char *name, int flags);
 static int _wait(pid_t pid, const char *name);
 static ssize_t getline_fd(char **buf, size_t * n, int fd);
 static char **json_array_of_strings_value(json_t * array);
-static int close_pipe(int pipe_fd[2]);
+static int close_pipe(int pipe_fd[]);
 
 int main(int argc, char **argv)
 {
@@ -1623,7 +1623,7 @@ static char **json_array_of_strings_value(json_t * array)
 	return a;
 }
 
-static int close_pipe(int pipe_fd[2])
+static int close_pipe(int pipe_fd[])
 {
 	int err = 0;
 
