@@ -84,8 +84,8 @@ static int close_pipe(int pipe_fd[]);
 int main(int argc, char **argv)
 {
 	const char *config_path = "config.json";
-	int i, err;
-	json_t *config, *value;
+	int err;
+	json_t *config;
 	json_error_t error;
 
 	if (argc == 2) {
