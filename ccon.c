@@ -248,7 +248,7 @@ static int handle_parent(json_t * config, pid_t cpid, int *to_child,
 
 	line = USER_NAMESPACE_MAPPING_COMPLETE;
 	len = strlen(line);
-	if (write(*to_child, line, len) != len) {
+	if (write(*to_child, line, len) != (ssize_t) len) {
 		perror("write to container");
 		return 1;
 	}
