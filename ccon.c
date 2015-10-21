@@ -66,7 +66,7 @@ static int get_host_exec_fd(json_t * config, int *exec_fd);
 static int run_hooks(json_t * config, const char *name, pid_t cpid);
 static void block_forever();
 static int get_namespace_type(const char *name, int *nstype);
-static int get_clone_flags(json_t * config, unsigned long *flags);
+static int get_clone_flags(json_t * config, int *flags);
 static int join_namespaces(json_t * config);
 static int set_user_namespace_mappings(json_t * config, pid_t cpid);
 static int set_user_map(json_t * user, pid_t cpid, const char *key,
@@ -167,7 +167,7 @@ static int run_container(json_t * config)
 	child_func_args_t child_args;
 	char *stack = NULL, *stack_top;
 	int pipe_in[2], pipe_out[2];
-	unsigned long flags = SIGCHLD;
+	int flags = SIGCHLD;
 	pid_t cpid;
 	int err = 0;
 
@@ -902,7 +902,7 @@ static int get_namespace_type(const char *name, int *nstype)
 	return 0;
 }
 
-static int get_clone_flags(json_t * config, unsigned long *flags)
+static int get_clone_flags(json_t * config, int *flags)
 {
 	json_t *namespace, *value, *path;
 	const char *key;
