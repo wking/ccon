@@ -307,7 +307,7 @@ static int handle_parent(json_t * config, pid_t cpid, int *to_child,
 
 	err = _wait(cpid, "container");
 
-	run_hooks(config, "post-stop", 0);
+	(void)run_hooks(config, "post-stop", 0);
 
  cleanup:
 	if (line != NULL) {
