@@ -60,8 +60,8 @@ static int set_working_directory(json_t * config);
 static int set_user_group(json_t * config);
 static int _capng_name_to_capability(const char *name);
 static int set_capabilities(json_t * config);
-static int exec_container_process(json_t * config, int exec_fd);
-static int exec_process(json_t * process, int exec_fd);
+static void exec_container_process(json_t * config, int exec_fd);
+static void exec_process(json_t * process, int exec_fd);
 static int get_host_exec_fd(json_t * config, int *exec_fd);
 static int run_hooks(json_t * config, const char *name, pid_t cpid);
 static void block_forever();
@@ -635,7 +635,7 @@ static int set_capabilities(json_t * config)
 	return 0;
 }
 
-static int exec_container_process(json_t * config, int exec_fd)
+static void exec_container_process(json_t * config, int exec_fd)
 {
 	json_t *process;
 
@@ -644,33 +644,31 @@ static int exec_container_process(json_t * config, int exec_fd)
 		fprintf(stderr, "process not defined, blocking forever\n");
 		block_forever();
 		fprintf(stderr, "container block failed\n");
-		return 1;
+		return;
 	}
 
-	return exec_process(process, exec_fd);
+	exec_process(process, exec_fd);
+	return;
 }
 
-static int exec_process(json_t * process, int exec_fd)
+static void exec_process(json_t * process, int exec_fd)
 {
 	char *path = NULL;
 	char **argv = NULL, **env = NULL;
 	json_t *value;
 	size_t i;
-	int err = 0;
 
 	value = json_object_get(process, "args");
 	if (!value) {
 		fprintf(stderr, "args not specified, blocking forever\n");
 		block_forever();
 		fprintf(stderr, "container block failed\n");
-		err = 1;
 		goto cleanup;
 	}
 
 	argv = json_array_of_strings_value(value);
 	if (!argv) {
 		fprintf(stderr, "failed to extract args\n");
-		err = 1;
 		goto cleanup;
 	}
 
@@ -679,7 +677,6 @@ static int exec_process(json_t * process, int exec_fd)
 		env = json_array_of_strings_value(value);
 		if (!env) {
 			fprintf(stderr, "failed to extract env\n");
-			err = 1;
 			goto cleanup;
 		}
 	} else {
@@ -694,7 +691,6 @@ static int exec_process(json_t * process, int exec_fd)
 		fprintf(stderr, "\n");
 		fexecve(exec_fd, argv, env);
 		perror("fexecve");
-		err = 1;
 		goto cleanup;
 	}
 
@@ -703,7 +699,6 @@ static int exec_process(json_t * process, int exec_fd)
 		path = strdup(json_string_value(value));
 		if (!path) {
 			perror("strdup");
-			err = 1;
 			goto cleanup;
 		}
 
@@ -714,7 +709,6 @@ static int exec_process(json_t * process, int exec_fd)
 		fprintf(stderr, "\n");
 		execvpe(path, argv, env);
 		perror("execvpe");
-		err = 1;
 	} else {
 
 		fprintf(stderr, "execute:");
@@ -724,7 +718,6 @@ static int exec_process(json_t * process, int exec_fd)
 		fprintf(stderr, "\n");
 		execvpe(argv[0], argv, env);
 		perror("execvpe");
-		err = 1;
 	}
 
  cleanup:
@@ -743,7 +736,7 @@ static int exec_process(json_t * process, int exec_fd)
 	if (path) {
 		free(path);
 	}
-	return err;
+	return;
 }
 
 static int get_host_exec_fd(json_t * config, int *exec_fd)
