@@ -972,7 +972,7 @@ static int join_namespaces(json_t * config)
 
 static int set_user_namespace_mappings(json_t * config, pid_t cpid)
 {
-	json_t *namespace, *user, *v1, *v2;
+	json_t *namespace, *user;
 
 	namespace = json_object_get(config, "namespaces");
 	if (!namespace) {
