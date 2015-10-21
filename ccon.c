@@ -60,13 +60,13 @@ static int set_working_directory(json_t * config);
 static int set_user_group(json_t * config);
 static int _capng_name_to_capability(const char *name);
 static int set_capabilities(json_t * config);
-static int exec_container_process(json_t * config, int exec_fd);
-static int exec_process(json_t * process, int exec_fd);
+static void exec_container_process(json_t * config, int exec_fd);
+static void exec_process(json_t * process, int exec_fd);
 static int get_host_exec_fd(json_t * config, int *exec_fd);
 static int run_hooks(json_t * config, const char *name, pid_t cpid);
 static void block_forever();
 static int get_namespace_type(const char *name, int *nstype);
-static int get_clone_flags(json_t * config, unsigned long *flags);
+static int get_clone_flags(json_t * config, int *flags);
 static int join_namespaces(json_t * config);
 static int set_user_namespace_mappings(json_t * config, pid_t cpid);
 static int set_user_map(json_t * user, pid_t cpid, const char *key,
@@ -79,13 +79,13 @@ static int open_in_path(const char *name, int flags);
 static int _wait(pid_t pid, const char *name);
 static ssize_t getline_fd(char **buf, size_t * n, int fd);
 static char **json_array_of_strings_value(json_t * array);
-static int close_pipe(int pipe_fd[2]);
+static int close_pipe(int pipe_fd[]);
 
 int main(int argc, char **argv)
 {
 	const char *config_path = "config.json";
-	int i, err;
-	json_t *config, *value;
+	int err;
+	json_t *config;
 	json_error_t error;
 
 	if (argc == 2) {
@@ -167,7 +167,7 @@ static int run_container(json_t * config)
 	child_func_args_t child_args;
 	char *stack = NULL, *stack_top;
 	int pipe_in[2], pipe_out[2];
-	unsigned long flags = SIGCHLD;
+	int flags = SIGCHLD;
 	pid_t cpid;
 	int err = 0;
 
@@ -240,6 +240,7 @@ static int handle_parent(json_t * config, pid_t cpid, int *to_child,
 {
 	char *line = NULL;
 	size_t allocated = 0, len;
+	ssize_t n;
 	int err = 0;
 
 	if (set_user_namespace_mappings(config, cpid)) {
@@ -248,17 +249,19 @@ static int handle_parent(json_t * config, pid_t cpid, int *to_child,
 
 	line = USER_NAMESPACE_MAPPING_COMPLETE;
 	len = strlen(line);
-	if (write(*to_child, line, len) != len) {
+	n = write(*to_child, line, len);
+	if (n < 0 || (size_t) n != len) {
 		perror("write to container");
 		return 1;
 	}
 	line = NULL;
 
-	len = getline_fd(&line, &allocated, *from_child);
-	if (len == -1) {
+	n = getline_fd(&line, &allocated, *from_child);
+	if (n == -1) {
 		err = 1;
 		goto cleanup;
 	}
+	len = (size_t) n;
 	if (strncmp
 	    (CONTAINER_SETUP_COMPLETE, line,
 	     strlen(CONTAINER_SETUP_COMPLETE)) != 0) {
@@ -287,7 +290,8 @@ static int handle_parent(json_t * config, pid_t cpid, int *to_child,
 
 	line = EXEC_PROCESS;
 	len = strlen(line);
-	if (write(*to_child, line, len) != len) {
+	n = write(*to_child, line, len);
+	if (n < 0 || (size_t) n != len) {
 		perror("write to container");
 		return 1;
 	}
@@ -303,7 +307,7 @@ static int handle_parent(json_t * config, pid_t cpid, int *to_child,
 
 	err = _wait(cpid, "container");
 
-	run_hooks(config, "post-stop", 0);
+	(void)run_hooks(config, "post-stop", 0);
 
  cleanup:
 	if (line != NULL) {
@@ -352,13 +356,15 @@ static int handle_child(json_t * config, int *to_parent, int *from_parent)
 {
 	char *line = NULL;
 	size_t allocated = 0, len;
+	ssize_t n;
 	int err = 0, exec_fd = -1;
 
-	len = getline_fd(&line, &allocated, *from_parent);
-	if (len == -1) {
+	n = getline_fd(&line, &allocated, *from_parent);
+	if (n == -1) {
 		err = 1;
 		goto cleanup;
 	}
+	len = (size_t) n;
 	if (strncmp
 	    (USER_NAMESPACE_MAPPING_COMPLETE, line,
 	     strlen(USER_NAMESPACE_MAPPING_COMPLETE)) != 0) {
@@ -386,7 +392,8 @@ static int handle_child(json_t * config, int *to_parent, int *from_parent)
 
 	line = CONTAINER_SETUP_COMPLETE;
 	len = strlen(line);
-	if (write(*to_parent, line, len) != len) {
+	n = write(*to_parent, line, len);
+	if (n < 0 || (size_t) n != len) {
 		perror("write to host");
 		line = NULL;	// don't free a string literal
 		err = 1;
@@ -404,11 +411,12 @@ static int handle_child(json_t * config, int *to_parent, int *from_parent)
 
 	/* block while parent runs pre-start hooks */
 
-	len = getline_fd(&line, &allocated, *from_parent);
-	if (len == -1) {
+	n = getline_fd(&line, &allocated, *from_parent);
+	if (n == -1) {
 		err = 1;
 		goto cleanup;
 	}
+	len = (size_t) n;
 	if (strncmp(EXEC_PROCESS, line, strlen(EXEC_PROCESS)) != 0) {
 		fprintf(stderr, "unexpected message from host(%d): %.*s\n",
 			(int)len, (int)len - 1, line);
@@ -610,7 +618,7 @@ static int set_capabilities(json_t * config)
 		if (capng_update
 		    (CAPNG_ADD,
 		     CAPNG_EFFECTIVE | CAPNG_PERMITTED | CAPNG_INHERITABLE |
-		     CAPNG_BOUNDING_SET, cap)) {
+		     CAPNG_BOUNDING_SET, (unsigned int)cap)) {
 			fprintf(stderr, "failed to restore the %s capability\n",
 				name);
 			return 1;
@@ -627,7 +635,7 @@ static int set_capabilities(json_t * config)
 	return 0;
 }
 
-static int exec_container_process(json_t * config, int exec_fd)
+static void exec_container_process(json_t * config, int exec_fd)
 {
 	json_t *process;
 
@@ -636,33 +644,31 @@ static int exec_container_process(json_t * config, int exec_fd)
 		fprintf(stderr, "process not defined, blocking forever\n");
 		block_forever();
 		fprintf(stderr, "container block failed\n");
-		return 1;
+		return;
 	}
 
-	return exec_process(process, exec_fd);
+	exec_process(process, exec_fd);
+	return;
 }
 
-static int exec_process(json_t * process, int exec_fd)
+static void exec_process(json_t * process, int exec_fd)
 {
 	char *path = NULL;
 	char **argv = NULL, **env = NULL;
 	json_t *value;
 	size_t i;
-	int err = 0;
 
 	value = json_object_get(process, "args");
 	if (!value) {
 		fprintf(stderr, "args not specified, blocking forever\n");
 		block_forever();
 		fprintf(stderr, "container block failed\n");
-		err = 1;
 		goto cleanup;
 	}
 
 	argv = json_array_of_strings_value(value);
 	if (!argv) {
 		fprintf(stderr, "failed to extract args\n");
-		err = 1;
 		goto cleanup;
 	}
 
@@ -671,7 +677,6 @@ static int exec_process(json_t * process, int exec_fd)
 		env = json_array_of_strings_value(value);
 		if (!env) {
 			fprintf(stderr, "failed to extract env\n");
-			err = 1;
 			goto cleanup;
 		}
 	} else {
@@ -686,7 +691,6 @@ static int exec_process(json_t * process, int exec_fd)
 		fprintf(stderr, "\n");
 		fexecve(exec_fd, argv, env);
 		perror("fexecve");
-		err = 1;
 		goto cleanup;
 	}
 
@@ -695,7 +699,6 @@ static int exec_process(json_t * process, int exec_fd)
 		path = strdup(json_string_value(value));
 		if (!path) {
 			perror("strdup");
-			err = 1;
 			goto cleanup;
 		}
 
@@ -706,7 +709,6 @@ static int exec_process(json_t * process, int exec_fd)
 		fprintf(stderr, "\n");
 		execvpe(path, argv, env);
 		perror("execvpe");
-		err = 1;
 	} else {
 
 		fprintf(stderr, "execute:");
@@ -716,7 +718,6 @@ static int exec_process(json_t * process, int exec_fd)
 		fprintf(stderr, "\n");
 		execvpe(argv[0], argv, env);
 		perror("execvpe");
-		err = 1;
 	}
 
  cleanup:
@@ -735,7 +736,7 @@ static int exec_process(json_t * process, int exec_fd)
 	if (path) {
 		free(path);
 	}
-	return err;
+	return;
 }
 
 static int get_host_exec_fd(json_t * config, int *exec_fd)
@@ -902,7 +903,7 @@ static int get_namespace_type(const char *name, int *nstype)
 	return 0;
 }
 
-static int get_clone_flags(json_t * config, unsigned long *flags)
+static int get_clone_flags(json_t * config, int *flags)
 {
 	json_t *namespace, *value, *path;
 	const char *key;
@@ -971,7 +972,7 @@ static int join_namespaces(json_t * config)
 
 static int set_user_namespace_mappings(json_t * config, pid_t cpid)
 {
-	json_t *namespace, *user, *v1, *v2;
+	json_t *namespace, *user;
 
 	namespace = json_object_get(config, "namespaces");
 	if (!namespace) {
@@ -1042,7 +1043,7 @@ static int set_user_map(json_t * user, pid_t cpid, const char *key,
 			err = 1;
 			goto cleanup;
 		}
-		container = json_integer_value(value);
+		container = (uid_t) json_integer_value(value);
 
 		value = json_object_get(mapping, "hostID");
 		if (!value) {
@@ -1052,7 +1053,7 @@ static int set_user_map(json_t * user, pid_t cpid, const char *key,
 			err = 1;
 			goto cleanup;
 		}
-		host = json_integer_value(value);
+		host = (uid_t) json_integer_value(value);
 
 		value = json_object_get(mapping, "size");
 		if (!value) {
@@ -1062,7 +1063,7 @@ static int set_user_map(json_t * user, pid_t cpid, const char *key,
 			err = 1;
 			goto cleanup;
 		}
-		size = json_integer_value(value);
+		size = (int)json_integer_value(value);
 
 		fprintf(stderr, "write '%u %u %d' to %s\n",
 			(unsigned int)container, (unsigned int)host, size,
@@ -1495,7 +1496,7 @@ static int pivot_root_remove_old(const char *new_root)
 {
 	char put_old[MAX_PATH];
 	char *old_basename;
-	int err = 0, fd, size;
+	int err = 0, size;
 
 	size = snprintf(put_old, MAX_PATH, "%s/pivot-root.XXXXXX", new_root);
 	if (size < 0) {
@@ -1561,7 +1562,7 @@ static ssize_t getline_fd(char **buf, size_t * n, int fd)
 	char delim = '\n';
 	size_t block = 512;
 	do {
-		if (size == *n) {
+		if ((size_t) size == *n) {
 			char *b = realloc(*buf, *n + block);
 			if (b == NULL) {
 				perror("realloc");
@@ -1623,7 +1624,7 @@ static char **json_array_of_strings_value(json_t * array)
 	return a;
 }
 
-static int close_pipe(int pipe_fd[2])
+static int close_pipe(int pipe_fd[])
 {
 	int err = 0;
 
