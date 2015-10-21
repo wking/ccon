@@ -618,7 +618,7 @@ static int set_capabilities(json_t * config)
 		if (capng_update
 		    (CAPNG_ADD,
 		     CAPNG_EFFECTIVE | CAPNG_PERMITTED | CAPNG_INHERITABLE |
-		     CAPNG_BOUNDING_SET, cap)) {
+		     CAPNG_BOUNDING_SET, (unsigned int)cap)) {
 			fprintf(stderr, "failed to restore the %s capability\n",
 				name);
 			return 1;
