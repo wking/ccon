@@ -778,7 +778,7 @@ static int get_host_exec_fd(json_t * config, int *exec_fd)
 		}
 	}
 
-	*exec_fd = open_in_path(arg0, O_RDONLY | O_CLOEXEC);
+	*exec_fd = open_in_path(arg0, O_PATH | O_CLOEXEC);
 	if (*exec_fd == -1) {
 		return 1;
 	}
