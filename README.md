@@ -672,6 +672,8 @@ production it would be best to:
 
 ## Dependencies
 
+* [Linux][linux] headers for 3.19+ for [`execveat`](#host)
+  ([sys-kernel/linux-headers][] on [Gentoo][]).
 * [The GNU C Library][glibc] ([sys-libs/glibc][] on [Gentoo][]).
 * [Jansson][] for JSON parsing ([dev-libs/jansson][] on [Gentoo][]).
 * [libcap-ng][] for adjusting [capabilities][capabilities.7]
@@ -714,6 +716,7 @@ be distributed under the GPLv3+.
 [jansson-license]: https://github.com/akheron/jansson/blob/v2.7/LICENSE
 [libcap-ng]: http://people.redhat.com/sgrubb/libcap-ng/
 [libcap-ng-license]: https://fedorahosted.org/libcap-ng/browser/tags/libcap-ng-0.7.7/COPYING.LIB
+[linux]: https://www.kernel.org/
 [make]: https://www.gnu.org/software/make/
 [Nginx]: http://nginx.org/
 [pkg-config]: http://www.freedesktop.org/wiki/Software/pkg-config/
@@ -729,6 +732,7 @@ be distributed under the GPLv3+.
 [dev-util/pkgconfig]: https://packages.gentoo.org/package/dev-util/pkgconfig
 [sys-devel/gcc]: https://packages.gentoo.org/package/sys-devel/gcc
 [sys-devel/make]: https://packages.gentoo.org/package/sys-devel/make
+[sys-kernel/linux-headers]: https://packages.gentoo.org/package/sys-kernel/linux-headers
 [sys-libs/glibc]: https://packages.gentoo.org/package/sys-libs/glibc
 [sys-libs/libcap-ng]: https://packages.gentoo.org/package/sys-libs/libcap-ng
 
