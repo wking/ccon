@@ -730,6 +730,7 @@ be distributed under the GPLv3+.
 [sys-devel/gcc]: https://packages.gentoo.org/package/sys-devel/gcc
 [sys-devel/make]: https://packages.gentoo.org/package/sys-devel/make
 [sys-libs/glibc]: https://packages.gentoo.org/package/sys-libs/glibc
+[sys-libs/libcap-ng]: https://packages.gentoo.org/package/sys-libs/libcap-ng
 
 [cgdelete.1]: http://sourceforge.net/p/libcg/libcg/ci/master/tree/doc/man/cgdelete.1
 [id.1]: http://man7.org/linux/man-pages/man1/id.1.html
