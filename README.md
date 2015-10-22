@@ -493,9 +493,9 @@ your `PATH` with its `argv[0]` set to `sh`.
 Instead of looking up [**`args[0]`**](#arguments) (or
 [**`path`**](#path)) in the container mount namespace, look it up in
 the host mount namespace using the host `PATH`.  This allows you to
-launch (via [`fexecve`][fexecve.3], so you [need a functional
-container `/proc`][fexecve.3.notes]) a statically-linked init process
-that only exists on the host.
+launch (via [`execveat`][execveat.2], so you [need Linux
+3.19+][execveat.2.versions]) a statically-linked init process that
+only exists on the host.
 
 * **`host`** (optional, boolean) lookup [**`args[0]`**](#arguments)
   (or [**`path`**](#path)) in the host mount namespace using the host
@@ -737,6 +737,8 @@ be distributed under the GPLv3+.
 [unshare.1]: http://man7.org/linux/man-pages/man1/unshare.1.html
 [chdir.2]: http://man7.org/linux/man-pages/man2/chdir.2.html
 [clone.2]: http://man7.org/linux/man-pages/man2/clone.2.html
+[execveat.2]: http://man7.org/linux/man-pages/man2/execveat.2.html
+[execveat.2.versions]: http://man7.org/linux/man-pages/man2/execveat.2.html#VERSIONS
 [getgroups.2]: http://man7.org/linux/man-pages/man2/getgroups.2.html
 [gethostname.2]: http://man7.org/linux/man-pages/man2/gethostname.2.html
 [mount.2]: http://man7.org/linux/man-pages/man2/mount.2.html
@@ -746,8 +748,6 @@ be distributed under the GPLv3+.
 [syscall.2]: http://man7.org/linux/man-pages/man2/syscall.2.html
 [environ.3p]: https://www.kernel.org/pub/linux/docs/man-pages/man-pages-posix/
 [exec.3]: http://man7.org/linux/man-pages/man3/exec.3.html
-[fexecve.3]: http://man7.org/linux/man-pages/man3/fexecve.3.html
-[fexecve.3.notes]: http://man7.org/linux/man-pages/man3/fexecve.3.html#NOTES
 [getcwd.3]: http://man7.org/linux/man-pages/man3/getcwd.3.html
 [stdin.3]: http://man7.org/linux/man-pages/man3/stdin.3.html
 [filesystems.5]: http://man7.org/linux/man-pages/man5/filesystems.5.html

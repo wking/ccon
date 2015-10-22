@@ -41,6 +41,14 @@
 #define CONTAINER_SETUP_COMPLETE "container-setup-complete\n"
 #define EXEC_PROCESS "exec-process\n"
 
+#ifndef execveat
+static int execveat(int fd, const char *path, char **argv, char **envp,
+		    int flags)
+{
+	return syscall(__NR_execveat, fd, path, argv, envp, flags);
+}
+#endif
+
 typedef struct child_func_args {
 	json_t *config;
 	int pipe_in[2];
@@ -689,8 +697,8 @@ static void exec_process(json_t * process, int exec_fd)
 			fprintf(stderr, " %s", argv[i]);
 		}
 		fprintf(stderr, "\n");
-		fexecve(exec_fd, argv, env);
-		perror("fexecve");
+		execveat(exec_fd, "", argv, env, AT_EMPTY_PATH);
+		perror("execveat");
 		goto cleanup;
 	}
 
