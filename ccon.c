@@ -126,7 +126,7 @@ int main(int argc, char **argv)
 	return err;
 }
 
-int validate_config(json_t * config)
+static int validate_config(json_t * config)
 {
 	json_t *value;
 	int err;
