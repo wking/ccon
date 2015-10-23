@@ -57,6 +57,7 @@ typedef struct child_func_args {
 
 extern char **environ;
 
+static void die(int signum);
 static int validate_config(json_t * config);
 static int validate_version(json_t * config);
 static int run_container(json_t * config);
@@ -124,6 +125,11 @@ int main(int argc, char **argv)
 	}
 
 	return err;
+}
+
+static void die(int signum)
+{
+	exit(1);
 }
 
 static int validate_config(json_t * config)
@@ -879,6 +885,12 @@ static int run_hooks(json_t * config, const char *name, pid_t cpid)
 static void block_forever()
 {
 	sigset_t mask;
+
+	if (signal(SIGHUP, die) == SIG_ERR ||
+	    signal(SIGINT, die) == SIG_ERR || signal(SIGTERM, die) == SIG_ERR) {
+		perror("signal");
+		return;
+	}
 
 	if (sigemptyset(&mask) == -1) {
 		perror("sigemptyset");
