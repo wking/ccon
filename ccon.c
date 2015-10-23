@@ -19,6 +19,7 @@
 #define _GNU_SOURCE
 #include <stdio.h>
 #include <stdlib.h>
+#include <errno.h>
 #include <fcntl.h>
 #include <libgen.h>
 #include <sched.h>
@@ -57,6 +58,12 @@ typedef struct child_func_args {
 
 extern char **environ;
 
+/* global PIDs for signal handling */
+static pid_t child_pid;
+static pid_t hook_pid;
+
+static void kill_child(int signum, siginfo_t * siginfo, void *unused);
+static void reap_child(int signum, siginfo_t * siginfo, void *unused);
 static void die(int signum);
 static int validate_config(json_t * config);
 static int validate_version(json_t * config);
@@ -127,6 +134,36 @@ int main(int argc, char **argv)
 	return err;
 }
 
+static void kill_child(int signum, siginfo_t * siginfo, void *unused)
+{
+	pid_t cpid = child_pid;
+
+	if (cpid > 0) {
+		if (kill(cpid, SIGKILL)) {
+			perror("kill");
+		}
+	}
+
+	return;
+}
+
+static void reap_child(int signum, siginfo_t * siginfo, void *unused)
+{
+	pid_t cpid = child_pid, hpid = hook_pid;
+
+	if ((*siginfo).si_pid == cpid) {
+		child_pid = -1;
+	} else if ((*siginfo).si_pid == hpid) {
+		hook_pid = -1;
+	} else {
+		if (waitid(P_PID, (*siginfo).si_pid, siginfo, WEXITED) == -1) {
+			perror("waitid");
+		}
+	}
+
+	return;
+}
+
 static void die(int signum)
 {
 	exit(1);
@@ -178,6 +215,7 @@ static int validate_version(json_t * config)
 
 static int run_container(json_t * config)
 {
+	struct sigaction act;
 	child_func_args_t child_args;
 	char *stack = NULL, *stack_top;
 	int pipe_in[2], pipe_out[2];
@@ -221,6 +259,25 @@ static int run_container(json_t * config)
 		goto cleanup;
 	}
 
+	child_pid = cpid;
+	act.sa_flags = SA_SIGINFO;
+	sigemptyset(&act.sa_mask);
+	act.sa_sigaction = kill_child;
+	if (sigaction(SIGHUP, &act, NULL) ||
+	    sigaction(SIGINT, &act, NULL) || sigaction(SIGTERM, &act, NULL)) {
+		perror("signal");
+		err = 1;
+		goto cleanup;
+	}
+
+	act.sa_flags = SA_SIGINFO | SA_NOCLDSTOP;
+	act.sa_sigaction = reap_child;
+	if (sigaction(SIGCHLD, &act, NULL)) {
+		perror("signal");
+		err = 1;
+		goto cleanup;
+	}
+
 	fprintf(stderr, "launched container process with PID %d\n", cpid);
 	if (close(pipe_in[0]) == -1) {
 		perror("close host-to-container pipe read-end");
@@ -237,6 +294,13 @@ static int run_container(json_t * config)
 	err = handle_parent(config, cpid, &pipe_in[1], &pipe_out[0]);
 
  cleanup:
+	cpid = child_pid;
+	if (cpid >= 0) {
+		if (kill(cpid, SIGKILL)) {
+			perror("kill");
+		}
+		child_pid = -1;
+	}
 	if (close_pipe(pipe_in)) {
 		err = 1;
 	}
@@ -295,9 +359,11 @@ static int handle_parent(json_t * config, pid_t cpid, int *to_child,
 
 	if (run_hooks(config, "pre-start", cpid)) {
 		err = 1;
-		fprintf(stderr, "SIGKILL the container process\n");
-		if (kill(cpid, SIGKILL)) {
-			perror("kill");
+		if (child_pid > 0) {
+			fprintf(stderr, "SIGKILL the container process\n");
+			if (kill(cpid, SIGKILL)) {
+				perror("kill");
+			}
 		}
 		goto wait;
 	}
@@ -839,6 +905,11 @@ static int run_hooks(json_t * config, const char *name, pid_t cpid)
 				return 1;
 			}
 			pipe_fd[1] = -1;
+
+			if (child_pid < 0) {
+				close_pipe(pipe_fd);
+				return 1;
+			}
 		}
 
 		hpid = fork();
@@ -867,6 +938,7 @@ static int run_hooks(json_t * config, const char *name, pid_t cpid)
 			return 1;
 		}
 
+		hook_pid = hpid;
 		fprintf(stderr, "launched hook %d with PID %d\n", (int)i, hpid);
 
 		if (cpid && close_pipe(pipe_fd)) {
@@ -874,6 +946,7 @@ static int run_hooks(json_t * config, const char *name, pid_t cpid)
 		}
 
 		err = _wait(hpid, "hook");
+		hook_pid = -1;
 		if (cpid && err) {
 			return 1;	/* abort failed pre-start execution */
 		}
@@ -1048,6 +1121,10 @@ static int set_user_map(json_t * user, pid_t cpid, const char *key,
 		return 1;
 	}
 
+	if (child_pid < 0) {
+		return 1;
+	}
+
 	fd = open(path, O_WRONLY);
 	if (fd == -1) {
 		perror("open");
@@ -1139,6 +1216,10 @@ static int set_user_setgroups(json_t * user, pid_t cpid)
 		fprintf(stderr,
 			"failed to format /proc/%lu/setgroups (needed a buffer with %d bytes)\n",
 			(unsigned long int)cpid, size);
+		return 1;
+	}
+
+	if (child_pid < 0) {
 		return 1;
 	}
 
@@ -1483,10 +1564,16 @@ static int _wait(pid_t pid, const char *name)
 	siginfo_t siginfo;
 	int err;
 
-	err = waitid(P_PID, pid, &siginfo, WEXITED);
-	if (err == -1) {
-		perror("waitid");
-		return 1;
+	for (;;) {
+		err = waitid(P_PID, pid, &siginfo, WEXITED);
+		if (err == -1) {
+			if (errno == EINTR) {
+				continue;
+			}
+			perror("waitid-x");
+			return 1;
+		}
+		break;
 	}
 
 	err = 1;
