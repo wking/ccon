@@ -38,7 +38,7 @@ than [LXC][lxc.container.conf.5]).
 
 ## Lifecycle
 
-When you invoke it from the command line, ccon [`clone`][clone.2]'s a
+When you invoke it from the command line, ccon [`clone`][clone.2]s a
 child process to create any new namespaces declared in the config
 file.  The parent process continues running in the host namespace.
 When the child process exits, the host process collects its exit
@@ -48,7 +48,7 @@ setup.  Here's an outline of the lifecycle:
 
 | Host process              | Container process           |
 | ------------------------- | --------------------------- |
-| clone's child →           | (clone unshares namespaces) |
+| clones child →            | (clone unshares namespaces) |
 | set user-ns mappings      | blocks on user-ns mappings  |
 | sends mappings-complete → |                             |
 | blocks on full namespace  | opens host executable       |
