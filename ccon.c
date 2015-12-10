@@ -196,7 +196,7 @@ static void usage(FILE * stream, char *path)
 
 static void version()
 {
-	printf("ccon 0.1.0\n");
+	printf("ccon 0.2.0\n");
 }
 
 static void kill_child(int signum, siginfo_t * siginfo, void *unused)
@@ -262,6 +262,7 @@ static int validate_version(json_t * config)
 	const char *version = json_string_value(config);
 	const char *supported_versions[] = {
 		"0.1.0",
+		"0.2.0",
 		NULL,
 	};
 	int i, err;
