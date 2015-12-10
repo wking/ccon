@@ -62,6 +62,9 @@ extern char **environ;
 static pid_t child_pid;
 static pid_t hook_pid;
 
+/* logging */
+#define LOG(...) do {fprintf(stderr, __VA_ARGS__);} while(0)
+
 static void kill_child(int signum, siginfo_t * siginfo, void *unused);
 static void reap_child(int signum, siginfo_t * siginfo, void *unused);
 static void die(int signum);
@@ -113,14 +116,14 @@ int main(int argc, char **argv)
 
 	config = json_load_file(config_path, JSON_REJECT_DUPLICATES, &error);
 	if (!config) {
-		fprintf(stderr, "error on %s:%d: %s\n", config_path, error.line,
-			error.text);
+		LOG("error on %s:%d: %s\n", config_path, error.line,
+		    error.text);
 		return 1;
 	}
 
 	err = validate_config(config);
 	if (err) {
-		fprintf(stderr, "%s invalid\n", config_path);
+		LOG("%s invalid\n", config_path);
 		goto cleanup;
 	}
 
@@ -175,13 +178,13 @@ static int validate_config(json_t * config)
 	int err;
 
 	if (!json_is_object(config)) {
-		fprintf(stderr, "config JSON is not an object\n");
+		LOG("config JSON is not an object\n");
 		return 1;
 	}
 
 	value = json_object_get(config, "version");
 	if (!value) {
-		fprintf(stderr, "failed to get version from config\n");
+		LOG("failed to get version from config\n");
 		return 1;
 	}
 	err = validate_version(value);
@@ -209,7 +212,7 @@ static int validate_version(json_t * config)
 			return 0;
 		}
 	}
-	fprintf(stderr, "config version %s is not supported\n", version);
+	LOG("config version %s is not supported\n", version);
 	return 1;
 }
 
@@ -278,7 +281,7 @@ static int run_container(json_t * config)
 		goto cleanup;
 	}
 
-	fprintf(stderr, "launched container process with PID %d\n", cpid);
+	LOG("launched container process with PID %d\n", cpid);
 	if (close(pipe_in[0]) == -1) {
 		perror("close host-to-container pipe read-end");
 		pipe_in[0] = -1;
@@ -343,8 +346,8 @@ static int handle_parent(json_t * config, pid_t cpid, int *to_child,
 	if (strncmp
 	    (CONTAINER_SETUP_COMPLETE, line,
 	     strlen(CONTAINER_SETUP_COMPLETE)) != 0) {
-		fprintf(stderr, "unexpected message from container(%d): %.*s\n",
-			(int)len, (int)len - 1, line);
+		LOG("unexpected message from container(%d): %.*s\n", (int)len,
+		    (int)len - 1, line);
 		goto cleanup;
 	}
 	free(line);
@@ -360,7 +363,7 @@ static int handle_parent(json_t * config, pid_t cpid, int *to_child,
 	if (run_hooks(config, "pre-start", cpid)) {
 		err = 1;
 		if (child_pid > 0) {
-			fprintf(stderr, "SIGKILL the container process\n");
+			LOG("SIGKILL the container process\n");
 			if (kill(cpid, SIGKILL)) {
 				perror("kill");
 			}
@@ -419,7 +422,7 @@ static int child_func(void *arg)
 	    handle_child(child_args->config, &child_args->pipe_out[1],
 			 &child_args->pipe_in[0]);
 	if (err) {
-		fprintf(stderr, "child failed\n");
+		LOG("child failed\n");
 	}
 
  cleanup:
@@ -448,8 +451,8 @@ static int handle_child(json_t * config, int *to_parent, int *from_parent)
 	if (strncmp
 	    (USER_NAMESPACE_MAPPING_COMPLETE, line,
 	     strlen(USER_NAMESPACE_MAPPING_COMPLETE)) != 0) {
-		fprintf(stderr, "unexpected message from container(%d): %.*s\n",
-			(int)len, (int)len - 1, line);
+		LOG("unexpected message from container(%d): %.*s\n", (int)len,
+		    (int)len - 1, line);
 		goto cleanup;
 	}
 	free(line);
@@ -498,8 +501,8 @@ static int handle_child(json_t * config, int *to_parent, int *from_parent)
 	}
 	len = (size_t) n;
 	if (strncmp(EXEC_PROCESS, line, strlen(EXEC_PROCESS)) != 0) {
-		fprintf(stderr, "unexpected message from host(%d): %.*s\n",
-			(int)len, (int)len - 1, line);
+		LOG("unexpected message from host(%d): %.*s\n", (int)len,
+		    (int)len - 1, line);
 		goto cleanup;
 	}
 	free(line);
@@ -565,7 +568,7 @@ static int set_working_directory(json_t * config)
 		return 0;
 	}
 
-	fprintf(stderr, "change working directory to %s\n", path);
+	LOG("change working directory to %s\n", path);
 	if (chdir(path) == -1) {
 		perror("chdir");
 		return 1;
@@ -595,7 +598,7 @@ static int set_user_group(json_t * config)
 	v1 = json_object_get(user, "gid");
 	if (v1) {
 		gid = (gid_t) json_integer_value(v1);
-		fprintf(stderr, "set GID to %d\n", (int)gid);
+		LOG("set GID to %d\n", (int)gid);
 		if (setgid(gid) == -1) {
 			perror("setgid");
 			err = 1;
@@ -616,14 +619,14 @@ static int set_user_group(json_t * config)
 			groups[i] = (gid_t) json_integer_value(v2);
 		}
 		v1 = NULL;
-		fprintf(stderr, "set additional GIDs to [");
+		LOG("set additional GIDs to [");
 		for (i = 0; i < n; i++) {
-			fprintf(stderr, "%d", (int)groups[i]);
+			LOG("%d", (int)groups[i]);
 			if (i < n - 1) {
-				fprintf(stderr, ", ");
+				LOG(", ");
 			}
 		}
-		fprintf(stderr, "]\n");
+		LOG("]\n");
 		if (setgroups(n, groups) == -1) {
 			perror("setgroups");
 			err = 1;
@@ -636,7 +639,7 @@ static int set_user_group(json_t * config)
 	v1 = json_object_get(user, "uid");
 	if (v1) {
 		uid = (uid_t) json_integer_value(v1);
-		fprintf(stderr, "set UID to %d\n", (int)uid);
+		LOG("set UID to %d\n", (int)uid);
 		if (setuid(uid) == -1) {
 			perror("setuid");
 			err = 1;
@@ -677,38 +680,33 @@ static int set_capabilities(json_t * config)
 		return 0;
 	}
 
-	fprintf(stderr, "remove all capabilities from the scratch space\n");
+	LOG("remove all capabilities from the scratch space\n");
 	capng_clear(CAPNG_SELECT_BOTH);
 
 	json_array_foreach(capabilities, i, value) {
 		name = json_string_value(value);
 		if (!name) {
-			fprintf(stderr,
-				"failed to extract process.capabilities[%d]\n",
-				(int)i);
+			LOG("failed to extract process.capabilities[%d]\n",
+			    (int)i);
 			return 1;
 		}
 		cap = _capng_name_to_capability(name);
 		if (cap < 0) {
-			fprintf(stderr, "unrecognized capability name: %s\n",
-				name);
+			LOG("unrecognized capability name: %s\n", name);
 		}
-		fprintf(stderr, "restore %s capability to scratch space\n",
-			name);
+		LOG("restore %s capability to scratch space\n", name);
 		if (capng_update
 		    (CAPNG_ADD,
 		     CAPNG_EFFECTIVE | CAPNG_PERMITTED | CAPNG_INHERITABLE |
 		     CAPNG_BOUNDING_SET, (unsigned int)cap)) {
-			fprintf(stderr, "failed to restore the %s capability\n",
-				name);
+			LOG("failed to restore the %s capability\n", name);
 			return 1;
 		}
 	}
 
-	fprintf(stderr,
-		"apply specified capabilities to bounding and traditional sets\n");
+	LOG("apply specified capabilities to bounding and traditional sets\n");
 	if (capng_apply(CAPNG_SELECT_BOTH)) {
-		fprintf(stderr, "failed to apply capabilities\n");
+		LOG("failed to apply capabilities\n");
 		return 1;
 	}
 
@@ -721,9 +719,9 @@ static void exec_container_process(json_t * config, int exec_fd)
 
 	process = json_object_get(config, "process");
 	if (!process) {
-		fprintf(stderr, "process not defined, blocking forever\n");
+		LOG("process not defined, blocking forever\n");
 		block_forever();
-		fprintf(stderr, "container block failed\n");
+		LOG("container block failed\n");
 		return;
 	}
 
@@ -740,15 +738,15 @@ static void exec_process(json_t * process, int exec_fd)
 
 	value = json_object_get(process, "args");
 	if (!value) {
-		fprintf(stderr, "args not specified, blocking forever\n");
+		LOG("args not specified, blocking forever\n");
 		block_forever();
-		fprintf(stderr, "container block failed\n");
+		LOG("container block failed\n");
 		goto cleanup;
 	}
 
 	argv = json_array_of_strings_value(value);
 	if (!argv) {
-		fprintf(stderr, "failed to extract args\n");
+		LOG("failed to extract args\n");
 		goto cleanup;
 	}
 
@@ -756,7 +754,7 @@ static void exec_process(json_t * process, int exec_fd)
 	if (value) {
 		env = json_array_of_strings_value(value);
 		if (!env) {
-			fprintf(stderr, "failed to extract env\n");
+			LOG("failed to extract env\n");
 			goto cleanup;
 		}
 	} else {
@@ -764,11 +762,11 @@ static void exec_process(json_t * process, int exec_fd)
 	}
 
 	if (exec_fd >= 0) {
-		fprintf(stderr, "execute host executable:");
+		LOG("execute host executable:");
 		for (i = 0; argv[i]; i++) {
-			fprintf(stderr, " %s", argv[i]);
+			LOG(" %s", argv[i]);
 		}
-		fprintf(stderr, "\n");
+		LOG("\n");
 		execveat(exec_fd, "", argv, env, AT_EMPTY_PATH);
 		perror("execveat");
 		goto cleanup;
@@ -782,20 +780,20 @@ static void exec_process(json_t * process, int exec_fd)
 			goto cleanup;
 		}
 
-		fprintf(stderr, "execute [%s]:", path);
+		LOG("execute [%s]:", path);
 		for (i = 0; argv[i]; i++) {
-			fprintf(stderr, " %s", argv[i]);
+			LOG(" %s", argv[i]);
 		}
-		fprintf(stderr, "\n");
+		LOG("\n");
 		execvpe(path, argv, env);
 		perror("execvpe");
 	} else {
 
-		fprintf(stderr, "execute:");
+		LOG("execute:");
 		for (i = 0; argv[i]; i++) {
-			fprintf(stderr, " %s", argv[i]);
+			LOG(" %s", argv[i]);
 		}
-		fprintf(stderr, "\n");
+		LOG("\n");
 		execvpe(argv[0], argv, env);
 		perror("execvpe");
 	}
@@ -838,7 +836,7 @@ static int get_host_exec_fd(json_t * config, int *exec_fd)
 	if (v1) {
 		arg0 = json_string_value(v1);
 		if (!arg0) {
-			fprintf(stderr, "failed to extract process.path\n");
+			LOG("failed to extract process.path\n");
 			return 1;
 		}
 	} else {
@@ -848,12 +846,12 @@ static int get_host_exec_fd(json_t * config, int *exec_fd)
 		}
 		v2 = json_array_get(v1, 0);
 		if (!v2) {
-			fprintf(stderr, "failed to extract process.args[0]\n");
+			LOG("failed to extract process.args[0]\n");
 			return 1;
 		}
 		arg0 = json_string_value(v2);
 		if (!arg0) {
-			fprintf(stderr, "failed to extract process.args[0]\n");
+			LOG("failed to extract process.args[0]\n");
 			return 1;
 		}
 	}
@@ -884,7 +882,7 @@ static int run_hooks(json_t * config, const char *name, pid_t cpid)
 	}
 
 	json_array_foreach(hook_array, i, hook) {
-		fprintf(stderr, "run %s hook %d\n", name, (int)i);
+		LOG("run %s hook %d\n", name, (int)i);
 
 		if (cpid) {
 			if (pipe(pipe_fd) == -1) {
@@ -939,7 +937,7 @@ static int run_hooks(json_t * config, const char *name, pid_t cpid)
 		}
 
 		hook_pid = hpid;
-		fprintf(stderr, "launched hook %d with PID %d\n", (int)i, hpid);
+		LOG("launched hook %d with PID %d\n", (int)i, hpid);
 
 		if (cpid && close_pipe(pipe_fd)) {
 			return 1;
@@ -989,7 +987,7 @@ static int get_namespace_type(const char *name, int *nstype)
 	} else if (strncmp("user", name, strlen("user") + 1) == 0) {
 		*nstype = CLONE_NEWUSER;
 	} else {
-		fprintf(stderr, "unrecognized namespace '%s'\n", name);
+		LOG("unrecognized namespace '%s'\n", name);
 		return 1;
 	}
 
@@ -1041,7 +1039,7 @@ static int join_namespaces(json_t * config)
 		if (get_namespace_type(key, &nstype)) {
 			return 1;
 		}
-		fprintf(stderr, "join %s namespace at %s\n", key, p);
+		LOG("join %s namespace at %s\n", key, p);
 		fd = open(p, O_RDONLY);
 		if (fd == -1) {
 			perror("open");
@@ -1110,14 +1108,12 @@ static int set_user_map(json_t * user, pid_t cpid, const char *key,
 	    snprintf(path, MAX_PATH, "/proc/%lu/%s", (unsigned long int)cpid,
 		     filename);
 	if (size < 0) {
-		fprintf(stderr, "failed to format /proc/%lu/%s\n",
-			(unsigned long int)cpid, filename);
+		LOG("failed to format /proc/%lu/%s\n", (unsigned long int)cpid,
+		    filename);
 		return 1;
 	}
 	if (size >= MAX_PATH) {
-		fprintf(stderr,
-			"failed to format /proc/%lu/%s (needed a buffer with %d bytes)\n",
-			(unsigned long int)cpid, filename, size);
+		LOG("failed to format /proc/%lu/%s (needed a buffer with %d bytes)\n", (unsigned long int)cpid, filename, size);
 		return 1;
 	}
 
@@ -1134,9 +1130,7 @@ static int set_user_map(json_t * user, pid_t cpid, const char *key,
 	json_array_foreach(mappings, i, mapping) {
 		value = json_object_get(mapping, "containerID");
 		if (!value) {
-			fprintf(stderr,
-				"failed to get namespaces.user.%s[%d].containerID\n",
-				key, (int)i);
+			LOG("failed to get namespaces.user.%s[%d].containerID\n", key, (int)i);
 			err = 1;
 			goto cleanup;
 		}
@@ -1144,9 +1138,8 @@ static int set_user_map(json_t * user, pid_t cpid, const char *key,
 
 		value = json_object_get(mapping, "hostID");
 		if (!value) {
-			fprintf(stderr,
-				"failed to get namespaces.user.%s[%d].hostID\n",
-				key, (int)i);
+			LOG("failed to get namespaces.user.%s[%d].hostID\n",
+			    key, (int)i);
 			err = 1;
 			goto cleanup;
 		}
@@ -1154,23 +1147,21 @@ static int set_user_map(json_t * user, pid_t cpid, const char *key,
 
 		value = json_object_get(mapping, "size");
 		if (!value) {
-			fprintf(stderr,
-				"failed to get namespaces.user.%s[%d].size\n",
-				key, (int)i);
+			LOG("failed to get namespaces.user.%s[%d].size\n", key,
+			    (int)i);
 			err = 1;
 			goto cleanup;
 		}
 		size = (int)json_integer_value(value);
 
-		fprintf(stderr, "write '%u %u %d' to %s\n",
-			(unsigned int)container, (unsigned int)host, size,
-			path);
+		LOG("write '%u %u %d' to %s\n",
+		    (unsigned int)container, (unsigned int)host, size, path);
 		if (dprintf
 		    (fd, "%u %u %d\n", (unsigned int)container,
 		     (unsigned int)host, size) < 0) {
-			fprintf(stderr, "failed to write '%u %u %d' to %s\n",
-				(unsigned int)container, (unsigned int)host,
-				size, path);
+			LOG("failed to write '%u %u %d' to %s\n",
+			    (unsigned int)container, (unsigned int)host,
+			    size, path);
 			err = 1;
 			goto cleanup;
 		}
@@ -1208,14 +1199,12 @@ static int set_user_setgroups(json_t * user, pid_t cpid)
 	    snprintf(path, MAX_PATH, "/proc/%lu/setgroups",
 		     (unsigned long int)cpid);
 	if (size < 0) {
-		fprintf(stderr, "failed to format /proc/%lu/setgroups\n",
-			(unsigned long int)cpid);
+		LOG("failed to format /proc/%lu/setgroups\n",
+		    (unsigned long int)cpid);
 		return 1;
 	}
 	if (size >= MAX_PATH) {
-		fprintf(stderr,
-			"failed to format /proc/%lu/setgroups (needed a buffer with %d bytes)\n",
-			(unsigned long int)cpid, size);
+		LOG("failed to format /proc/%lu/setgroups (needed a buffer with %d bytes)\n", (unsigned long int)cpid, size);
 		return 1;
 	}
 
@@ -1223,7 +1212,7 @@ static int set_user_setgroups(json_t * user, pid_t cpid)
 		return 1;
 	}
 
-	fprintf(stderr, "write '%s' to %s\n", value, path);
+	LOG("write '%s' to %s\n", value, path);
 	fd = open(path, O_WRONLY);
 	if (fd == -1) {
 		perror("open");
@@ -1308,7 +1297,7 @@ static int get_mount_flag(const char *name, unsigned long *flag)
 		*flag = MS_VERBOSE;
 #endif
 	} else {
-		fprintf(stderr, "unrecognized mount flag '%s'\n", name);
+		LOG("unrecognized mount flag '%s'\n", name);
 		return 1;
 	}
 
@@ -1344,8 +1333,7 @@ static int handle_mounts(json_t * config)
 		return 1;
 	}
 	if (cwd[0] != '/') {
-		fprintf(stderr,
-			"current working directory is unreachable: %s\n", cwd);
+		LOG("current working directory is unreachable: %s\n", cwd);
 		return 1;
 	}
 
@@ -1356,10 +1344,7 @@ static int handle_mounts(json_t * config)
 			source = json_string_value(v1);
 			if (source[0] == '/') {
 				if (strlen(source) >= MAX_PATH) {
-					fprintf(stderr,
-						"mount path %s is too long (%d >= %d)\n",
-						source, (int)strlen(source),
-						MAX_PATH);
+					LOG("mount path %s is too long (%d >= %d)\n", source, (int)strlen(source), MAX_PATH);
 					return 1;
 				}
 				memcpy(full_source, source, strlen(source));
@@ -1368,15 +1353,12 @@ static int handle_mounts(json_t * config)
 				    snprintf(full_source, MAX_PATH, "%s/%s",
 					     cwd, source);
 				if (size < 0) {
-					fprintf(stderr,
-						"failed to format %s/%s\n", cwd,
-						source);
+					LOG("failed to format %s/%s\n", cwd,
+					    source);
 					return 1;
 				}
 				if (size >= MAX_PATH) {
-					fprintf(stderr,
-						"failed to format %s/%s (needed a buffer with %d bytes)\n",
-						cwd, source, size);
+					LOG("failed to format %s/%s (needed a buffer with %d bytes)\n", cwd, source, size);
 					return 1;
 				}
 				source = full_source;
@@ -1388,10 +1370,7 @@ static int handle_mounts(json_t * config)
 			target = json_string_value(v1);
 			if (target[0] == '/') {
 				if (strlen(target) >= MAX_PATH) {
-					fprintf(stderr,
-						"mount path %s is too long (%d >= %d)\n",
-						target, (int)strlen(target),
-						MAX_PATH);
+					LOG("mount path %s is too long (%d >= %d)\n", target, (int)strlen(target), MAX_PATH);
 					return 1;
 				}
 			} else {
@@ -1399,15 +1378,12 @@ static int handle_mounts(json_t * config)
 				    snprintf(full_target, MAX_PATH, "%s/%s",
 					     cwd, target);
 				if (size < 0) {
-					fprintf(stderr,
-						"failed to format %s/%s\n", cwd,
-						target);
+					LOG("failed to format %s/%s\n", cwd,
+					    target);
 					return 1;
 				}
 				if (size >= MAX_PATH) {
-					fprintf(stderr,
-						"failed to format %s/%s (needed a buffer with %d bytes)\n",
-						cwd, target, size);
+					LOG("failed to format %s/%s (needed a buffer with %d bytes)\n", cwd, target, size);
 					return 1;
 				}
 				target = full_target;
@@ -1430,9 +1406,7 @@ static int handle_mounts(json_t * config)
 			json_array_foreach(v1, j, v2) {
 				flag = json_string_value(v2);
 				if (!flag) {
-					fprintf(stderr,
-						"failed to extract namespaces.mount.mounts[%d].flags[%d]\n",
-						(int)i, (int)j);
+					LOG("failed to extract namespaces.mount.mounts[%d].flags[%d]\n", (int)i, (int)j);
 					return 1;
 				}
 				if (get_mount_flag(flag, &f)) {
@@ -1448,10 +1422,7 @@ static int handle_mounts(json_t * config)
 				return 1;
 			}
 		} else {
-			fprintf(stderr,
-				"mount %lu: %s to %s (type: %s, flags: %lu, data %s)\n",
-				(unsigned long int)i, source, target, type,
-				flags, data);
+			LOG("mount %lu: %s to %s (type: %s, flags: %lu, data %s)\n", (unsigned long int)i, source, target, type, flags, data);
 			if (mount(source, target, type, flags, data) == -1) {
 				perror("mount");
 				return 1;
@@ -1470,9 +1441,7 @@ static int open_in_path(const char *name, int flags)
 	int fd;
 
 	if (name[0] == '/') {
-		fprintf(stderr,
-			"open container-process executable from host %s\n",
-			name);
+		LOG("open container-process executable from host %s\n", name);
 		fd = open(name, flags);
 		if (fd == -1) {
 			perror("open");
@@ -1496,16 +1465,12 @@ static int open_in_path(const char *name, int flags)
 		}
 		i = strlen(path);
 		if (i + strlen(name) + 2 > MAX_PATH) {
-			fprintf(stderr,
-				"failed to format relative path (needed a buffer with %d byes)\n",
-				(int)(i + strlen(name) + 2));
+			LOG("failed to format relative path (needed a buffer with %d byes)\n", (int)(i + strlen(name) + 2));
 			goto cleanup;
 		}
 		path[i++] = '/';
 		strcpy(path + i, name);
-		fprintf(stderr,
-			"open container-process executable from host %s\n",
-			path);
+		LOG("open container-process executable from host %s\n", path);
 		fd = open(path, flags);
 		if (fd == -1) {
 			perror("open");
@@ -1517,7 +1482,7 @@ static int open_in_path(const char *name, int flags)
 
 	paths = getenv("PATH");
 	if (!paths) {
-		fprintf(stderr, "failed to get host PATH\n");
+		LOG("failed to get host PATH\n");
 		goto cleanup;
 	}
 	paths = strdup(paths);
@@ -1531,9 +1496,7 @@ static int open_in_path(const char *name, int flags)
 		paths2 = NULL;
 		i = strlen(p);
 		if (i + strlen(name) + 2 > MAX_PATH) {
-			fprintf(stderr,
-				"failed to format relative path (needed a buffer with %d byes)\n",
-				(int)(i + strlen(name) + 2));
+			LOG("failed to format relative path (needed a buffer with %d byes)\n", (int)(i + strlen(name) + 2));
 			goto cleanup;
 		}
 		strcpy(path, p);
@@ -1541,15 +1504,14 @@ static int open_in_path(const char *name, int flags)
 		strcpy(path + i, name);
 		fd = open(path, flags);
 		if (fd >= 0) {
-			fprintf(stderr,
-				"open container-process executable from host %s\n",
-				path);
+			LOG("open container-process executable from host %s\n",
+			    path);
 			free(path);
 			return fd;
 		}
 	}
 
-	fprintf(stderr, "failed to find %s in the host PATH\n", name);
+	LOG("failed to find %s in the host PATH\n", name);
 
  cleanup:
 	if (paths) {
@@ -1580,20 +1542,19 @@ static int _wait(pid_t pid, const char *name)
 	switch (siginfo.si_code) {
 	case CLD_EXITED:
 		err = siginfo.si_status;
-		fprintf(stderr, "%s process %d exited with %d\n", name,
-			(int)pid, err);
+		LOG("%s process %d exited with %d\n", name, (int)pid, err);
 		break;
 	case CLD_KILLED:
-		fprintf(stderr, "%s killed (%s, %d)\n", name,
-			strsignal(siginfo.si_status), siginfo.si_status);
+		LOG("%s killed (%s, %d)\n", name,
+		    strsignal(siginfo.si_status), siginfo.si_status);
 		break;
 	case CLD_DUMPED:
-		fprintf(stderr, "%s killed by signal %d and dumped core\n",
-			name, siginfo.si_status);
+		LOG("%s killed by signal %d and dumped core\n",
+		    name, siginfo.si_status);
 		break;
 	default:
-		fprintf(stderr, "unrecognized %s exit condition: %d\n", name,
-			siginfo.si_code);
+		LOG("unrecognized %s exit condition: %d\n", name,
+		    siginfo.si_code);
 	}
 
 	return err;
@@ -1607,14 +1568,11 @@ static int pivot_root_remove_old(const char *new_root)
 
 	size = snprintf(put_old, MAX_PATH, "%s/pivot-root.XXXXXX", new_root);
 	if (size < 0) {
-		fprintf(stderr, "failed to format %s/pivot-root.XXXXXX",
-			new_root);
+		LOG("failed to format %s/pivot-root.XXXXXX", new_root);
 		return 1;
 	}
 	if (size >= MAX_PATH) {
-		fprintf(stderr,
-			"failed to format %s/.pivot-root.XXXXXX (needed a buffer with %d bytes)\n",
-			new_root, size);
+		LOG("failed to format %s/.pivot-root.XXXXXX (needed a buffer with %d bytes)\n", new_root, size);
 		return 1;
 	}
 
@@ -1629,7 +1587,7 @@ static int pivot_root_remove_old(const char *new_root)
 		goto cleanup;
 	}
 
-	fprintf(stderr, "pivot root to %s\n", new_root);
+	LOG("pivot root to %s\n", new_root);
 	if (syscall(SYS_pivot_root, new_root, put_old)) {
 		perror("pivot_root");
 		if (rmdir(put_old)) {
@@ -1646,7 +1604,7 @@ static int pivot_root_remove_old(const char *new_root)
 		goto cleanup;
 	}
 
-	fprintf(stderr, "unmount old root from %s\n", old_basename);
+	LOG("unmount old root from %s\n", old_basename);
 	if (umount2(old_basename, MNT_DETACH)) {
 		perror("umount");
 		err = 1;
