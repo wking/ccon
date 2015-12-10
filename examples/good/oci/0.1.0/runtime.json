@@ -20,7 +20,7 @@
 		"poststop": [
 			{
 				"path": "/bin/sh",
-				"args": ["sh", "-c", "echo 'post-stop'; env;"],
+				"args": ["sh", "-c", "echo 'post-stop'; env; cat"],
 				"env": [
 					"PATH=/bin",
 					"PAGER=less"

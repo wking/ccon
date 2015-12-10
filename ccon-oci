@@ -29,6 +29,7 @@ import json
 import os
 import sys
 import textwrap
+import uuid
 
 
 def version():
@@ -153,7 +154,9 @@ def _convert_root(basedir, root):
     ]
 
 
-def _convert_hook(hook):
+def _convert_hook(hook, state=None, read_pid=False):
+    if state is None:
+        state = {}
     h = {
         'args': hook.pop('args', [hook['path']]),
     }
@@ -161,10 +164,22 @@ def _convert_hook(hook):
         h['path'] = hook['path']
     if 'env' in hook:
         h['env'] = hook.pop('env')
-    return h
+    args = [
+        sys.argv[0],
+        'hook',
+        '--state',
+        json.dumps(state),
+        '--hook',
+        json.dumps(h),
+    ]
+    if read_pid:
+        args.append('--read-pid')
+    return {
+        'args': args,
+    }
 
 
-def convert_config(basedir, config, runtime):
+def convert_config(basedir, config, runtime, state):
     version = config.pop('version')
     if version not in ['0.1.0']:
         raise NotImplementedError(
@@ -233,13 +248,16 @@ def convert_config(basedir, config, runtime):
         pre_start = hooks.pop('prestart', None)
         if pre_start:
             c['hooks'] = {
-                'pre-start': [_convert_hook(hook=h) for h in pre_start],
+                'pre-start': [
+                    _convert_hook(hook=h, state=state, read_pid=True)
+                    for h in pre_start],
             }
         post_stop = hooks.pop('poststop', None)
         if post_stop:
             if 'hooks' not in c:
                 c['hooks'] = {}
-            c['hooks']['post-stop'] = [_convert_hook(hook=h) for h in post_stop]
+            c['hooks']['post-stop'] = [
+                    _convert_hook(hook=h, state=state) for h in post_stop]
         if hooks:
             raise NotImplementedError(
                 'unparsed config.json hooks: {}'.format(hooks))
@@ -258,7 +276,17 @@ def convert_config(basedir, config, runtime):
     return c
 
 
-def start(bundle='.', verbose=False):
+def _get_state(bundle=',', container_id=None):
+    if container_id is None:
+        container_id = uuid.uuid4().hex
+    return {
+        'version': '0.1.0',
+        'id': container_id,
+        'root': os.path.abspath(bundle),
+    }
+
+
+def start(bundle='.', id=None, verbose=False):
     """Start a container from a bundle directory.
     """
     args = ['ccon']
@@ -268,7 +296,9 @@ def start(bundle='.', verbose=False):
         config = json.load(f)
     with open(os.path.join(bundle, 'runtime.json'), 'r') as f:
         runtime = json.load(f)
-    config = convert_config(basedir=bundle, config=config, runtime=runtime)
+    state = _get_state(bundle=bundle, container_id=id)
+    config = convert_config(
+        basedir=bundle, config=config, runtime=runtime, state=state)
     # os.pipe opens with O_CLOEXEC since Python 3.4
     read, write = os.pipe2(0)
     os.write(write, json.dumps(config).encode('UTF-8'))
@@ -277,17 +307,40 @@ def start(bundle='.', verbose=False):
     os.execvp(args[0], args)
 
 
-def config(bundle='.'):
+def config(bundle='.', id=None):
     """Convert an OCI config to a ccon config.
     """
     with open(os.path.join(bundle, 'config.json'), 'r') as f:
         config = json.load(f)
     with open(os.path.join(bundle, 'runtime.json'), 'r') as f:
         runtime = json.load(f)
-    config = convert_config(basedir=bundle, config=config, runtime=runtime)
+    state = _get_state(bundle=bundle, container_id=id)
+    config = convert_config(
+        basedir=bundle, config=config, runtime=runtime, state=state)
     json.dump(
         config, sys.stdout, indent=2, separators=(',', ': '), sort_keys=True)
     sys.stdout.write('\n')
+
+
+def hook(state=None, hook=None, read_pid=False):
+    """Helper for passing OCI-spec state JSON to hooks.
+    """
+    state = json.loads(state)
+    hook = json.loads(hook)
+    stdin_fileno = sys.stdin.fileno()
+    if read_pid:
+        state['pid'] = int(sys.stdin.read())
+    env = {}
+    for e in hook['env']:
+        key, value = e.split('=', 1)
+        env[key] = value
+    # os.pipe opens with O_CLOEXEC since Python 3.4
+    read, write = os.pipe2(0)
+    os.write(write, json.dumps(state).encode('UTF-8'))
+    os.close(write)
+    os.dup2(read, stdin_fileno)
+    os.close(read)
+    os.execvpe(hook['args'][0], hook['args'], env)
 
 
 def main():
@@ -306,6 +359,7 @@ def main():
             ('version', version),
             ('start', start),
             ('config', config),
+            ('hook', hook),
             ]:
         doc = textwrap.dedent(func.__doc__).strip().replace('%', '%%')
         subparser = commands.add_parser(
@@ -316,10 +370,23 @@ def main():
         subparser.set_defaults(func=func)
         if command in ['start', 'config']:
             subparser.add_argument(
+                '--id', metavar='ID',
+                help='Set the container ID for the new container.')
+            subparser.add_argument(
                 '--bundle', metavar='PATH', default='.',
                 help=(
                     'Override the path to the bundle directory (defaults to '
                     'the current working directory).'))
+        if command == 'hook':
+            subparser.add_argument(
+                '--state', metavar='JSON', required=True,
+                help='State JSON (except for the PID) to pass to the hook.')
+            subparser.add_argument(
+                '--read-pid', action='store_true',
+                help='Read the PID from stdin and add it to the state.')
+            subparser.add_argument(
+                '--hook', metavar='JSON', required=True,
+                help='Ccon hook JSON for the user-specified hook.')
 
     args = parser.parse_args()
 
