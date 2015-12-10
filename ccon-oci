@@ -153,6 +153,17 @@ def _convert_root(basedir, root):
     ]
 
 
+def _convert_hook(hook):
+    h = {
+        'args': hook.pop('args', [hook['path']]),
+    }
+    if hook['path'] != h['args'][0]:
+        h['path'] = hook['path']
+    if 'env' in hook:
+        h['env'] = hook.pop('env')
+    return h
+
+
 def convert_config(basedir, config, runtime):
     version = config.pop('version')
     if version not in ['0.1.0']:
@@ -217,6 +228,21 @@ def convert_config(basedir, config, runtime):
         capabilities = config.get('linux', {}).pop('capabilities', None)
         if capabilities:
             c['process']['capabilities'] = capabilities
+    hooks = runtime.pop('hooks', None)
+    if hooks:
+        pre_start = hooks.pop('prestart', None)
+        if pre_start:
+            c['hooks'] = {
+                'pre-start': [_convert_hook(hook=h) for h in pre_start],
+            }
+        post_stop = hooks.pop('poststop', None)
+        if post_stop:
+            if 'hooks' not in c:
+                c['hooks'] = {}
+            c['hooks']['post-stop'] = [_convert_hook(hook=h) for h in post_stop]
+        if hooks:
+            raise NotImplementedError(
+                'unparsed config.json hooks: {}'.format(hooks))
     hostname = config.pop('hostname', None)
     # TODO: inject hostname-setting hook
     if 'linux' in config and not config['linux']:

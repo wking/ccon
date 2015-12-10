@@ -6,6 +6,28 @@
 			"options": ["rbind", "rw"]
 		}
 	},
+	"hooks": {
+		"prestart": [
+			{
+				"path": "/bin/sh",
+				"args": ["/bin/sh", "-c", "echo 'pre-start'; env; cat"],
+				"env": [
+					"PATH=/bin",
+					"PAGER=less"
+				]
+			}
+		],
+		"poststop": [
+			{
+				"path": "/bin/sh",
+				"args": ["sh", "-c", "echo 'post-stop'; env;"],
+				"env": [
+					"PATH=/bin",
+					"PAGER=less"
+				]
+			}
+		]
+	},
 	"linux": {
 		"namespaces": [
 			{
