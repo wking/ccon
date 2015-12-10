@@ -21,6 +21,7 @@
 #include <stdlib.h>
 #include <errno.h>
 #include <fcntl.h>
+#include <getopt.h>
 #include <libgen.h>
 #include <sched.h>
 #include <signal.h>
@@ -63,9 +64,13 @@ static pid_t child_pid;
 static pid_t hook_pid;
 
 /* logging */
-#define LOG(...) do {fprintf(stderr, __VA_ARGS__);} while(0)
-#define PERROR(...) do {perror(__VA_ARGS__);} while(0)
+static int verbose;
+#define LOG(...) do {if (verbose) {fprintf(stderr, __VA_ARGS__);}} while(0)
+#define PERROR(...) do {if (verbose) {perror(__VA_ARGS__);}} while(0)
 
+static int parse_args(int argc, char **argv, const char **config_path);
+static void usage(FILE * stream, char *path);
+static void version();
 static void kill_child(int signum, siginfo_t * siginfo, void *unused);
 static void reap_child(int signum, siginfo_t * siginfo, void *unused);
 static void die(int signum);
@@ -108,10 +113,7 @@ int main(int argc, char **argv)
 	json_t *config;
 	json_error_t error;
 
-	if (argc == 2) {
-		config_path = argv[1];
-	} else if (argc > 2) {
-		fprintf(stderr, "usage: %s [CONFIG_PATH]\n", argv[0]);
+	if (parse_args(argc, argv, &config_path)) {
 		return 1;
 	}
 
@@ -136,6 +138,65 @@ int main(int argc, char **argv)
 	}
 
 	return err;
+}
+
+static int parse_args(int argc, char **argv, const char **config_path)
+{
+	int c, option_index;
+	static struct option long_options[] = {
+		{"help", no_argument, NULL, 'h'},
+		{"verbose", no_argument, &verbose, 1},
+		{"version", no_argument, NULL, 'v'},
+		{"config", required_argument, NULL, 'c'},
+		{},
+	};
+
+	while (1) {
+		option_index = 0;
+		c = getopt_long(argc, argv, "hVvc:", long_options,
+				&option_index);
+		if (c == -1) {
+			break;
+		}
+		switch (c) {
+		case 0:
+			break;	/* long-option flag was set */
+		case 'h':
+			usage(stdout, argv[0]);
+			exit(0);
+		case 'V':
+			verbose = 1;	/* set short-option flag */
+			break;
+		case 'v':
+			version();
+			exit(0);
+		case 'c':
+			*config_path = optarg;
+			break;
+		default:	/* '?' */
+			usage(stderr, argv[0]);
+			exit(1);
+		}
+	}
+
+	return 0;
+}
+
+static void usage(FILE * stream, char *path)
+{
+	fprintf(stream, "usage: %s [OPTION]...\n\n", path);
+	fprintf(stream, "Options:\n");
+	fprintf(stream, "  -h, --help\tShow this usage information and exit\n");
+	fprintf(stream, "  -V, --verbose\tEnable debug logging to stderr\n");
+	fprintf(stream,
+		"  -v, --version\tPrint version information and exit\n");
+	fprintf(stream,
+		"  -c, --config=PATH\tOverride config.json with an alternate path\n");
+}
+
+static void version()
+{
+	printf("ccon 0.1.0\n");
 }
 
 static void kill_child(int signum, siginfo_t * siginfo, void *unused)
