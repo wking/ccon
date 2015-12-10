@@ -87,23 +87,23 @@ launch an interactive [BusyBox][] shell in new namespaces (you may
 need to adjust the **`hostID`** entries to match `id -u` and `id -g`).
 
 You can load the configuration from a different file by giving its
-path on the command line.  For example:
+path with the `--config` option.  For example:
 
 ```
-$ ccon path/to/config.json
+$ ccon --config path/to/config.json
 ```
 
 or:
 
 ```
-$ ccon /dev/fd/4 4<path/to/config.json
+$ ccon --config /dev/fd/4 4<path/to/config.json
 ```
 
 or (using [Bash][bash]'s [process
 substitution][bash-process-substitution]):
 
 ```
-$ ccon <(echo '{"version": "0.1.0", "process": …}')
+$ ccon --config <(echo '{"version": "0.1.0", "process": …}')
 ```
 
 There are additional examples focusing on specific tasks in the
