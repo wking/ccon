@@ -64,6 +64,7 @@ static pid_t hook_pid;
 
 /* logging */
 #define LOG(...) do {fprintf(stderr, __VA_ARGS__);} while(0)
+#define PERROR(...) do {perror(__VA_ARGS__);} while(0)
 
 static void kill_child(int signum, siginfo_t * siginfo, void *unused);
 static void reap_child(int signum, siginfo_t * siginfo, void *unused);
@@ -143,7 +144,7 @@ static void kill_child(int signum, siginfo_t * siginfo, void *unused)
 
 	if (cpid > 0) {
 		if (kill(cpid, SIGKILL)) {
-			perror("kill");
+			PERROR("kill");
 		}
 	}
 
@@ -160,7 +161,7 @@ static void reap_child(int signum, siginfo_t * siginfo, void *unused)
 		hook_pid = -1;
 	} else {
 		if (waitid(P_PID, (*siginfo).si_pid, siginfo, WEXITED) == -1) {
-			perror("waitid");
+			PERROR("waitid");
 		}
 	}
 
@@ -231,12 +232,12 @@ static int run_container(json_t * config)
 	}
 
 	if (pipe(pipe_in) == -1) {
-		perror("pipe");
+		PERROR("pipe");
 		return 1;
 	}
 
 	if (pipe(pipe_out) == -1) {
-		perror("pipe");
+		PERROR("pipe");
 		err = 1;
 		goto cleanup;
 	}
@@ -249,7 +250,7 @@ static int run_container(json_t * config)
 
 	stack = malloc(STACK_SIZE);
 	if (!stack) {
-		perror("malloc");
+		PERROR("malloc");
 		err = 1;
 		goto cleanup;
 	}
@@ -257,7 +258,7 @@ static int run_container(json_t * config)
 
 	cpid = clone(&child_func, stack_top, flags, &child_args);
 	if (cpid == -1) {
-		perror("clone");
+		PERROR("clone");
 		err = 1;
 		goto cleanup;
 	}
@@ -268,7 +269,7 @@ static int run_container(json_t * config)
 	act.sa_sigaction = kill_child;
 	if (sigaction(SIGHUP, &act, NULL) ||
 	    sigaction(SIGINT, &act, NULL) || sigaction(SIGTERM, &act, NULL)) {
-		perror("signal");
+		PERROR("signal");
 		err = 1;
 		goto cleanup;
 	}
@@ -276,20 +277,20 @@ static int run_container(json_t * config)
 	act.sa_flags = SA_SIGINFO | SA_NOCLDSTOP;
 	act.sa_sigaction = reap_child;
 	if (sigaction(SIGCHLD, &act, NULL)) {
-		perror("signal");
+		PERROR("signal");
 		err = 1;
 		goto cleanup;
 	}
 
 	LOG("launched container process with PID %d\n", cpid);
 	if (close(pipe_in[0]) == -1) {
-		perror("close host-to-container pipe read-end");
+		PERROR("close host-to-container pipe read-end");
 		pipe_in[0] = -1;
 		goto cleanup;
 	}
 	pipe_in[0] = -1;
 	if (close(pipe_out[1]) == -1) {
-		perror("close container-to-host pipe write-end");
+		PERROR("close container-to-host pipe write-end");
 		pipe_out[1] = -1;
 		goto cleanup;
 	}
@@ -300,7 +301,7 @@ static int run_container(json_t * config)
 	cpid = child_pid;
 	if (cpid >= 0) {
 		if (kill(cpid, SIGKILL)) {
-			perror("kill");
+			PERROR("kill");
 		}
 		child_pid = -1;
 	}
@@ -332,7 +333,7 @@ static int handle_parent(json_t * config, pid_t cpid, int *to_child,
 	len = strlen(line);
 	n = write(*to_child, line, len);
 	if (n < 0 || (size_t) n != len) {
-		perror("write to container");
+		PERROR("write to container");
 		return 1;
 	}
 	line = NULL;
@@ -354,7 +355,7 @@ static int handle_parent(json_t * config, pid_t cpid, int *to_child,
 	line = NULL;
 
 	if (close(*from_child) == -1) {
-		perror("close container-to-host pipe read-end");
+		PERROR("close container-to-host pipe read-end");
 		*from_child = -1;
 		return 1;
 	}
@@ -365,7 +366,7 @@ static int handle_parent(json_t * config, pid_t cpid, int *to_child,
 		if (child_pid > 0) {
 			LOG("SIGKILL the container process\n");
 			if (kill(cpid, SIGKILL)) {
-				perror("kill");
+				PERROR("kill");
 			}
 		}
 		goto wait;
@@ -375,14 +376,14 @@ static int handle_parent(json_t * config, pid_t cpid, int *to_child,
 	len = strlen(line);
 	n = write(*to_child, line, len);
 	if (n < 0 || (size_t) n != len) {
-		perror("write to container");
+		PERROR("write to container");
 		return 1;
 	}
 	line = NULL;
 
  wait:
 	if (close(*to_child) == -1) {
-		perror("close host-to-container pipe write-end");
+		PERROR("close host-to-container pipe write-end");
 		*to_child = -1;
 		return 1;
 	}
@@ -405,14 +406,14 @@ static int child_func(void *arg)
 	int err = 0;
 
 	if (close(child_args->pipe_in[1]) == -1) {
-		perror("close host-to-container pipe write-end");
+		PERROR("close host-to-container pipe write-end");
 		child_args->pipe_in[1] = -1;
 		err = 1;
 		goto cleanup;
 	}
 	child_args->pipe_in[1] = -1;
 	if (close(child_args->pipe_out[0]) == -1) {
-		perror("close container-to-host pipe read-end");
+		PERROR("close container-to-host pipe read-end");
 		child_args->pipe_out[0] = -1;
 		err = 1;
 		goto cleanup;
@@ -477,7 +478,7 @@ static int handle_child(json_t * config, int *to_parent, int *from_parent)
 	len = strlen(line);
 	n = write(*to_parent, line, len);
 	if (n < 0 || (size_t) n != len) {
-		perror("write to host");
+		PERROR("write to host");
 		line = NULL;	// don't free a string literal
 		err = 1;
 		goto cleanup;
@@ -485,7 +486,7 @@ static int handle_child(json_t * config, int *to_parent, int *from_parent)
 	line = NULL;
 
 	if (close(*to_parent) == -1) {
-		perror("close container-to-host pipe write-end");
+		PERROR("close container-to-host pipe write-end");
 		err = 1;
 		*to_parent = -1;
 		goto cleanup;
@@ -510,7 +511,7 @@ static int handle_child(json_t * config, int *to_parent, int *from_parent)
 	line = NULL;
 
 	if (close(*from_parent) == -1) {
-		perror("close host-to-container pipe read-end");
+		PERROR("close host-to-container pipe read-end");
 		*from_parent = -1;
 		err = 1;
 		goto cleanup;
@@ -538,7 +539,7 @@ static int handle_child(json_t * config, int *to_parent, int *from_parent)
  cleanup:
 	if (exec_fd >= 0) {
 		if (close(exec_fd)) {
-			perror("close user-specified executable file");
+			PERROR("close user-specified executable file");
 			err = 1;
 		}
 	}
@@ -570,7 +571,7 @@ static int set_working_directory(json_t * config)
 
 	LOG("change working directory to %s\n", path);
 	if (chdir(path) == -1) {
-		perror("chdir");
+		PERROR("chdir");
 		return 1;
 	}
 
@@ -600,7 +601,7 @@ static int set_user_group(json_t * config)
 		gid = (gid_t) json_integer_value(v1);
 		LOG("set GID to %d\n", (int)gid);
 		if (setgid(gid) == -1) {
-			perror("setgid");
+			PERROR("setgid");
 			err = 1;
 			goto cleanup;
 		}
@@ -611,7 +612,7 @@ static int set_user_group(json_t * config)
 		n = json_array_size(v1);
 		groups = malloc(sizeof(gid_t) * n);
 		if (!groups) {
-			perror("malloc");
+			PERROR("malloc");
 			err = 1;
 			goto cleanup;
 		}
@@ -628,7 +629,7 @@ static int set_user_group(json_t * config)
 		}
 		LOG("]\n");
 		if (setgroups(n, groups) == -1) {
-			perror("setgroups");
+			PERROR("setgroups");
 			err = 1;
 			goto cleanup;
 		}
@@ -641,7 +642,7 @@ static int set_user_group(json_t * config)
 		uid = (uid_t) json_integer_value(v1);
 		LOG("set UID to %d\n", (int)uid);
 		if (setuid(uid) == -1) {
-			perror("setuid");
+			PERROR("setuid");
 			err = 1;
 			goto cleanup;
 		}
@@ -768,7 +769,7 @@ static void exec_process(json_t * process, int exec_fd)
 		}
 		LOG("\n");
 		execveat(exec_fd, "", argv, env, AT_EMPTY_PATH);
-		perror("execveat");
+		PERROR("execveat");
 		goto cleanup;
 	}
 
@@ -776,7 +777,7 @@ static void exec_process(json_t * process, int exec_fd)
 	if (value) {
 		path = strdup(json_string_value(value));
 		if (!path) {
-			perror("strdup");
+			PERROR("strdup");
 			goto cleanup;
 		}
 
@@ -786,7 +787,7 @@ static void exec_process(json_t * process, int exec_fd)
 		}
 		LOG("\n");
 		execvpe(path, argv, env);
-		perror("execvpe");
+		PERROR("execvpe");
 	} else {
 
 		LOG("execute:");
@@ -795,7 +796,7 @@ static void exec_process(json_t * process, int exec_fd)
 		}
 		LOG("\n");
 		execvpe(argv[0], argv, env);
-		perror("execvpe");
+		PERROR("execvpe");
 	}
 
  cleanup:
@@ -886,19 +887,19 @@ static int run_hooks(json_t * config, const char *name, pid_t cpid)
 
 		if (cpid) {
 			if (pipe(pipe_fd) == -1) {
-				perror("pipe");
+				PERROR("pipe");
 				return 1;
 			}
 
 			/* write to kernel buffer, this is less than PIPE_BUF */
 			if (dprintf(pipe_fd[1], "%d\n", cpid) < 0) {
-				perror("dprintf");
+				PERROR("dprintf");
 				close_pipe(pipe_fd);
 				return 1;
 			}
 
 			if (close(pipe_fd[1])) {
-				perror("close host-to-hook pipe write-end");
+				PERROR("close host-to-hook pipe write-end");
 				close_pipe(pipe_fd);
 				return 1;
 			}
@@ -912,7 +913,7 @@ static int run_hooks(json_t * config, const char *name, pid_t cpid)
 
 		hpid = fork();
 		if (hpid == -1) {
-			perror("fork");
+			PERROR("fork");
 			if (cpid) {
 				close_pipe(pipe_fd);
 			}
@@ -922,7 +923,7 @@ static int run_hooks(json_t * config, const char *name, pid_t cpid)
 		if (hpid == 0) {	/* child */
 			if (cpid) {
 				if (dup2(pipe_fd[0], STDIN_FILENO) == -1) {
-					perror("dup2");
+					PERROR("dup2");
 					return 1;
 				}
 				if (close(pipe_fd[0])) {
@@ -959,16 +960,16 @@ static void block_forever()
 
 	if (signal(SIGHUP, die) == SIG_ERR ||
 	    signal(SIGINT, die) == SIG_ERR || signal(SIGTERM, die) == SIG_ERR) {
-		perror("signal");
+		PERROR("signal");
 		return;
 	}
 
 	if (sigemptyset(&mask) == -1) {
-		perror("sigemptyset");
+		PERROR("sigemptyset");
 		return;
 	}
 	sigsuspend(&mask);
-	perror("sigsuspend");
+	PERROR("sigsuspend");
 	return;
 }
 
@@ -1042,18 +1043,18 @@ static int join_namespaces(json_t * config)
 		LOG("join %s namespace at %s\n", key, p);
 		fd = open(p, O_RDONLY);
 		if (fd == -1) {
-			perror("open");
+			PERROR("open");
 			return 1;
 		}
 		if (setns(fd, nstype) == -1) {
-			perror("setns");
+			PERROR("setns");
 			if (close(fd) == -1) {
-				perror("close");
+				PERROR("close");
 			}
 			return 1;
 		}
 		if (close(fd) == -1) {
-			perror("close");
+			PERROR("close");
 			return 1;
 		}
 	}
@@ -1123,7 +1124,7 @@ static int set_user_map(json_t * user, pid_t cpid, const char *key,
 
 	fd = open(path, O_WRONLY);
 	if (fd == -1) {
-		perror("open");
+		PERROR("open");
 		return 1;
 	}
 
@@ -1170,7 +1171,7 @@ static int set_user_map(json_t * user, pid_t cpid, const char *key,
  cleanup:
 	if (fd >= 0) {
 		if (close(fd) == -1) {
-			perror("close");
+			PERROR("close");
 			err = 1;
 		}
 	}
@@ -1215,12 +1216,12 @@ static int set_user_setgroups(json_t * user, pid_t cpid)
 	LOG("write '%s' to %s\n", value, path);
 	fd = open(path, O_WRONLY);
 	if (fd == -1) {
-		perror("open");
+		PERROR("open");
 		return 1;
 	}
 
 	if (write(fd, value, strlen(value)) == -1) {
-		perror("write");
+		PERROR("write");
 		err = 1;
 		goto cleanup;
 	}
@@ -1228,7 +1229,7 @@ static int set_user_setgroups(json_t * user, pid_t cpid)
  cleanup:
 	if (fd >= 0) {
 		if (close(fd) == -1) {
-			perror("close");
+			PERROR("close");
 			err = 1;
 		}
 	}
@@ -1329,7 +1330,7 @@ static int handle_mounts(json_t * config)
 	}
 
 	if (!getcwd(cwd, MAX_PATH)) {
-		perror("getcwd");
+		PERROR("getcwd");
 		return 1;
 	}
 	if (cwd[0] != '/') {
@@ -1424,7 +1425,7 @@ static int handle_mounts(json_t * config)
 		} else {
 			LOG("mount %lu: %s to %s (type: %s, flags: %lu, data %s)\n", (unsigned long int)i, source, target, type, flags, data);
 			if (mount(source, target, type, flags, data) == -1) {
-				perror("mount");
+				PERROR("mount");
 				return 1;
 			}
 		}
@@ -1444,7 +1445,7 @@ static int open_in_path(const char *name, int flags)
 		LOG("open container-process executable from host %s\n", name);
 		fd = open(name, flags);
 		if (fd == -1) {
-			perror("open");
+			PERROR("open");
 			return -1;
 		}
 		return fd;
@@ -1452,7 +1453,7 @@ static int open_in_path(const char *name, int flags)
 
 	path = malloc(sizeof(char) * MAX_PATH);
 	if (!path) {
-		perror("malloc");
+		PERROR("malloc");
 		return -1;
 	}
 	memset(path, 0, sizeof(char) * MAX_PATH);
@@ -1460,7 +1461,7 @@ static int open_in_path(const char *name, int flags)
 	p = strchr(name, '/');
 	if (p) {
 		if (!getcwd(path, MAX_PATH)) {
-			perror("getcwd");
+			PERROR("getcwd");
 			goto cleanup;
 		}
 		i = strlen(path);
@@ -1473,7 +1474,7 @@ static int open_in_path(const char *name, int flags)
 		LOG("open container-process executable from host %s\n", path);
 		fd = open(path, flags);
 		if (fd == -1) {
-			perror("open");
+			PERROR("open");
 			return -1;
 		}
 		free(path);
@@ -1487,7 +1488,7 @@ static int open_in_path(const char *name, int flags)
 	}
 	paths = strdup(paths);
 	if (!paths) {
-		perror("strdup");
+		PERROR("strdup");
 		goto cleanup;
 	}
 
@@ -1532,7 +1533,7 @@ static int _wait(pid_t pid, const char *name)
 			if (errno == EINTR) {
 				continue;
 			}
-			perror("waitid-x");
+			PERROR("waitid-x");
 			return 1;
 		}
 		break;
@@ -1577,21 +1578,21 @@ static int pivot_root_remove_old(const char *new_root)
 	}
 
 	if (!mkdtemp(put_old)) {
-		perror("mkdtemp");
+		PERROR("mkdtemp");
 		return 1;
 	}
 
 	if (chdir(new_root)) {
-		perror("chdir");
+		PERROR("chdir");
 		err = 1;
 		goto cleanup;
 	}
 
 	LOG("pivot root to %s\n", new_root);
 	if (syscall(SYS_pivot_root, new_root, put_old)) {
-		perror("pivot_root");
+		PERROR("pivot_root");
 		if (rmdir(put_old)) {
-			perror("rmdir");
+			PERROR("rmdir");
 		}
 		return 1;
 	}
@@ -1599,21 +1600,21 @@ static int pivot_root_remove_old(const char *new_root)
 	old_basename = basename(put_old);
 
 	if (chdir("/")) {
-		perror("chdir");
+		PERROR("chdir");
 		err = 1;
 		goto cleanup;
 	}
 
 	LOG("unmount old root from %s\n", old_basename);
 	if (umount2(old_basename, MNT_DETACH)) {
-		perror("umount");
+		PERROR("umount");
 		err = 1;
 		goto cleanup;
 	}
 
  cleanup:
 	if (rmdir(old_basename)) {
-		perror("rmdir");
+		PERROR("rmdir");
 		err = 1;
 	}
 
@@ -1630,7 +1631,7 @@ static ssize_t getline_fd(char **buf, size_t * n, int fd)
 		if ((size_t) size == *n) {
 			char *b = realloc(*buf, *n + block);
 			if (b == NULL) {
-				perror("realloc");
+				PERROR("realloc");
 				return -1;
 			}
 			*buf = b;
@@ -1638,7 +1639,7 @@ static ssize_t getline_fd(char **buf, size_t * n, int fd)
 		}
 		s = read(fd, (*buf) + size, 1);
 		if (s == -1) {
-			perror("read");
+			PERROR("read");
 			return -1;
 		}
 		if (s != 1) {
@@ -1663,7 +1664,7 @@ static char **json_array_of_strings_value(json_t * array)
 	i = json_array_size(array);
 	a = malloc(sizeof(char *) * (i + 1));
 	if (!a) {
-		perror("malloc");
+		PERROR("malloc");
 		err = 1;
 		goto cleanup;
 	}
@@ -1671,7 +1672,7 @@ static char **json_array_of_strings_value(json_t * array)
 	json_array_foreach(array, i, value) {
 		a[i] = strdup(json_string_value(value));
 		if (!a[i]) {
-			perror("strdup");
+			PERROR("strdup");
 			err = 1;
 			break;
 		}
@@ -1695,7 +1696,7 @@ static int close_pipe(int pipe_fd[])
 
 	if (pipe_fd[0] >= 0) {
 		if (close(pipe_fd[0]) == -1) {
-			perror("close pipe read-end");
+			PERROR("close pipe read-end");
 			err = 1;
 		}
 		pipe_fd[0] = -1;
@@ -1703,7 +1704,7 @@ static int close_pipe(int pipe_fd[])
 
 	if (pipe_fd[1] >= 0) {
 		if (close(pipe_fd[1]) == -1) {
-			perror("close pipe write-end");
+			PERROR("close pipe write-end");
 			err = 1;
 		}
 		pipe_fd[1] = -1;
