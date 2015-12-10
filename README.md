@@ -86,6 +86,10 @@ namespace, so ccon's mount listing falls under
 launch an interactive [BusyBox][] shell in new namespaces (you may
 need to adjust the **`hostID`** entries to match `id -u` and `id -g`).
 
+If you want to use ccon to launch OCI bundles, you can use the
+[ccon-oci](ccon-oci) wrapper, which supports the [Open Container
+Specification][ocs] and the [runtime command-line API][oci-cli].
+
 You can load the configuration from a different file by giving its
 path with the `--config` option.  For example:
 
@@ -704,6 +708,7 @@ Because all the dependencies are [GPL-compatible][], ccon binaries can
 be distributed under the GPLv3+.
 
 [ocs]: https://github.com/opencontainers/specs
+[oci-cli]: https://github.com/wking/oci-command-line-api
 
 [bash]: https://www.gnu.org/software/bash/
 [bash-process-substitution]: https://www.gnu.org/software/bash/manual/html_node/Process-Substitution.html

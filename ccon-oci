@@ -1,0 +1,313 @@
+#!/usr/bin/env python3
+#
+# ccon-oci(1) - OCI compatibility wrapper around ccon.
+# Copyright (C) 2015 W. Trevor King <wking@tremily.us>
+#
+# This program is free software: you can redistribute it and/or modify
+# it under the terms of the GNU General Public License as published by
+# the Free Software Foundation, either version 3 of the License, or
+# (at your option) any later version.
+#
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU General Public License for more details.
+#
+# You should have received a copy of the GNU General Public License
+# along with this program.  If not, see <http://www.gnu.org/licenses/>.
+#
+# Requires Python 3.3+ for os.pipe2 [1].
+#
+# [1]: https://docs.python.org/3/library/os.html#os.pipe2
+
+"""opencontainers/specs runtime wrapper for ccon
+"""
+
+import argparse
+import inspect
+import json
+import os
+import sys
+import textwrap
+
+
+def version():
+    """Print version information and exit.
+    """
+    os.execlp('ccon', '--version')
+
+
+def _convert_namespaces(namespaces):
+    ns = {}
+    for namespace in namespaces:
+        name = namespace.pop('type')
+        if name == 'network':
+            name = 'net'
+        ns[name] = {}
+        if 'path' in namespace:
+            ns[name]['path'] = namespace.pop('path')
+        if namespace:
+            raise NotImplementedError(
+                'unparsed runtime.json namespace fields: {}'
+                .format(namespace))
+    return ns
+
+
+def _convert_mount(mount_point, mount_sources):
+    mounts = []
+    name = mount_point.pop('name')
+    mount_source = mount_sources[name].copy()
+    mount_type = mount_source.pop('type')
+    if mount_type == 'bind':
+        mount_flags = [
+            'MS_BIND',
+        ]
+        options = mount_source.pop('options', [])
+        if 'rbind' in options:
+            options.remove('rbind')
+            mount_flags.append('MS_REC')
+        if 'ro' in options:
+            options.remove('ro')
+            mount_flags.append('MS_RDONLY')
+        if 'rw' in options:
+            options.remove('rw')
+            if options:
+                raise NotImplementedError(
+                    'unparsed mount options for {}: {}'.format(name, options))
+        mounts.append({
+            'source': mount_source.pop('source'),
+            'target': mount_point.pop('path'),
+            'flags': mount_flags,
+        })
+    else:
+        raise NotImplementedError(
+            'unrecognized mount for {}: {}'.format(name, mount_type))
+    if mount_point:
+        raise NotImplementedError(
+            'unparsed config.json mount fields: {}'.format(mount_point))
+    if mount_source:
+        raise NotImplementedError(
+            'unparsed config.json mount fields: {}'.format(mount_source))
+    return mounts
+
+
+def _convert_root(basedir, root):
+    rt = os.path.join(basedir, root['path'])
+    dev = os.path.join(rt, 'dev')
+    proc = os.path.join(rt, 'proc')
+    sys = os.path.join(rt, 'sys')
+    run = os.path.join(rt, 'run')
+    tmp = os.path.join(rt, 'tmp')
+    for path in [dev, proc, sys, run, tmp]:
+        os.makedirs(path, exist_ok=True)
+    remount_flags = [
+        'MS_REMOUNT',
+        'MS_BIND'
+    ]
+    if root.get('readonly'):
+        remount_flags.append('MS_RDONLY')
+    return [
+        {
+            'source': rt,
+            'target': rt,
+            'flags': [
+                'MS_BIND'
+            ]
+        },
+        {
+            'source': '/dev',
+            'target': dev,
+            'flags': [
+                'MS_BIND',
+                'MS_REC'
+            ]
+        },
+        {
+            'target': proc,
+            'type': 'proc'
+        },
+        {
+            'source': '/sys',
+            'target': sys,
+            'flags': [
+                'MS_BIND',
+                'MS_REC'
+            ]
+        },
+        {
+            'source': rt,
+            'type': 'pivot-root'
+        },
+        {
+            'target': '/',
+            'flags': remount_flags,
+        },
+        {
+            'target': '/run',
+            'type': 'tmpfs'
+        },
+        {
+            'target': '/tmp',
+            'type': 'tmpfs'
+        }
+    ]
+
+
+def convert_config(basedir, config, runtime):
+    version = config.pop('version')
+    if version not in ['0.1.0']:
+        raise NotImplementedError(
+            'unsupported OCI-spec version: {}'.format(version))
+    c = {
+        'version': '0.1.0',
+    }
+    config.pop('platform', None)  # nothing interesting in here
+    namespaces = {
+        n['type']: n.get('path')
+        for n in runtime.get('linux', {}).get('namespaces', [])}
+    namespaces = runtime.get('linux', {}).pop('namespaces', [])
+    if namespaces:
+        c['namespaces'] = _convert_namespaces(namespaces=namespaces)
+    mounts = []
+    mount_sources = runtime.pop('mounts', {})
+    mount_points = config.pop('mounts', [])
+    for mount_point in mount_points:
+        mounts.extend(_convert_mount(
+            mount_point=mount_point, mount_sources=mount_sources))
+
+    root = config.pop('root')
+    if root:
+        root_mounts = _convert_root(basedir=basedir, root=root)
+        mounts.insert(0, root_mounts[0])  # remount rootfs first
+        mounts.extend(root_mounts[1:])
+    if mounts:
+        if 'mount' not in c.get('namespaces', {}):
+            raise ValueError('cannot set root or mounts without a mount namespace')
+        c['namespaces']['mount']['mounts'] = mounts
+    for map_type in ['uid', 'gid']:
+        field = '{}Mappings'.format(map_type)
+        mapping = config.get('linux', {}).pop(field)
+        if mapping:
+            if 'user' not in c.get('namespaces', {}):
+                raise ValueError(
+                    "cannot set config.json's linux.{} without a user "
+                    'namespace'
+                    .format(field))
+            c['namespaces']['user'][field] = mapping
+    process = config.pop('process', None)
+    if process:
+        c['process'] = {}
+        process.pop('terminal', None)  # nothing interesting in here
+        for field in ['args', 'cwd', 'env', 'user']:
+            if field in process:
+                c['process'][field] = process.pop(field)
+        user = c['process'].get('user', None)
+        if user:
+            uid = os.geteuid()
+            if 'user' not in c.get('namespaces', {}) and uid != 0:
+                raise ValueError(
+                    "must be root or in a user namespace to set config.json's "
+                    'process.user')
+            if uid != 0:
+                c['namespaces']['user']['setgroups'] = False
+        if process:
+            raise NotImplementedError(
+                'unparsed config.json process fields: {}'
+                .format(process))
+        capabilities = config.get('linux', {}).pop('capabilities', None)
+        if capabilities:
+            c['process']['capabilities'] = capabilities
+    hostname = config.pop('hostname', None)
+    # TODO: inject hostname-setting hook
+    if 'linux' in config and not config['linux']:
+        config.pop('linux')  # remove empty dictionary
+    if 'linux' in runtime and not runtime['linux']:
+        runtime.pop('linux')  # remove empty dictionary
+    if config:
+        raise NotImplementedError(
+            'unparsed config.json fields: {}'.format(config))
+    if runtime:
+        raise NotImplementedError(
+            'unparsed runtime.json fields: {}'.format(runtime))
+    return c
+
+
+def start(bundle='.', verbose=False):
+    """Start a container from a bundle directory.
+    """
+    args = ['ccon']
+    if verbose:
+        args.append('--verbose')
+    with open(os.path.join(bundle, 'config.json'), 'r') as f:
+        config = json.load(f)
+    with open(os.path.join(bundle, 'runtime.json'), 'r') as f:
+        runtime = json.load(f)
+    config = convert_config(basedir=bundle, config=config, runtime=runtime)
+    # os.pipe opens with O_CLOEXEC since Python 3.4
+    read, write = os.pipe2(0)
+    os.write(write, json.dumps(config).encode('UTF-8'))
+    os.close(write)
+    args.extend(['--config', '/proc/self/fd/{}'.format(read)])
+    os.execvp(args[0], args)
+
+
+def config(bundle='.'):
+    """Convert an OCI config to a ccon config.
+    """
+    with open(os.path.join(bundle, 'config.json'), 'r') as f:
+        config = json.load(f)
+    with open(os.path.join(bundle, 'runtime.json'), 'r') as f:
+        runtime = json.load(f)
+    config = convert_config(basedir=bundle, config=config, runtime=runtime)
+    json.dump(
+        config, sys.stdout, indent=2, separators=(',', ': '), sort_keys=True)
+    sys.stdout.write('\n')
+
+
+def main():
+    parser = argparse.ArgumentParser(
+        description=__doc__.strip(),
+        formatter_class=argparse.RawDescriptionHelpFormatter)
+    parser.add_argument(
+        '-V', '--verbose', action='store_true',
+        help='enable ccon debugging messages on stderr')
+    commands = parser.add_subparsers(
+        title='commands',
+        description=(
+            'For help on a particular command, run: '
+            "'%(prog)s ... <command> --help'."))
+    for command, func in [
+            ('version', version),
+            ('start', start),
+            ('config', config),
+            ]:
+        doc = textwrap.dedent(func.__doc__).strip().replace('%', '%%')
+        subparser = commands.add_parser(
+            command,
+            help=doc.splitlines()[0],
+            description=doc,
+            formatter_class=argparse.RawDescriptionHelpFormatter)
+        subparser.set_defaults(func=func)
+        if command in ['start', 'config']:
+            subparser.add_argument(
+                '--bundle', metavar='PATH', default='.',
+                help=(
+                    'Override the path to the bundle directory (defaults to '
+                    'the current working directory).'))
+
+    args = parser.parse_args()
+
+    if not getattr(args, 'func', None):
+        parser.print_usage()
+        sys.exit(1)
+
+    if args.func == help:
+        arg_names = ['command']
+    else:
+        (arg_names, varargs, varkw) = inspect.getargs(args.func.__code__)
+    kwargs = {key: getattr(args, key) for key in arg_names if key in args}
+    args.func(**kwargs)
+
+
+if __name__ == '__main__':
+    main()

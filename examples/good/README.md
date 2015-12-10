@@ -13,3 +13,5 @@ Examples of successful patterns:
     (via a new user namespace).
   * [Launch a container process in a new freezer cgroup, removing that
     cgroup on exit](cgroups).
+  * Launch a container from an OCI bundle
+    * [OCI v0.1.0](oci/0.1.0)

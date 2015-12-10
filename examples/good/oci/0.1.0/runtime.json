@@ -1,0 +1,34 @@
+{
+	"mounts": {
+		"root": {
+			"type": "bind",
+			"source": "/tmp",
+			"options": ["rbind", "rw"]
+		}
+	},
+	"linux": {
+		"namespaces": [
+			{
+				"type": "pid"
+			},
+			{
+				"type": "network"
+			},
+			{
+				"type": "mount"
+			},
+			{
+				"type": "ipc"
+			},
+			{
+				"type": "uts"
+			},
+			{
+				"type": "user"
+			},
+			{
+				"type": "mount"
+			}
+		]
+	}
+}
