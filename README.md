@@ -110,6 +110,14 @@ substitution][bash-process-substitution]):
 $ ccon --config <(echo '{"version": "0.2.0", "process": …}')
 ```
 
+You can also specify the config JSON directly on the command line with
+`--config-string`, which may be convenient in situations where using
+pipes or process substitution are too awkward:
+
+```
+$ ccon --config-string '{"version": "0.2.0", "process": …}'
+```
+
 There are additional examples focusing on specific tasks in the
 [`examples/`](examples) directory.
 

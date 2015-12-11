@@ -68,7 +68,8 @@ static int verbose;
 #define LOG(...) do {if (verbose) {fprintf(stderr, __VA_ARGS__);}} while(0)
 #define PERROR(...) do {if (verbose) {perror(__VA_ARGS__);}} while(0)
 
-static int parse_args(int argc, char **argv, const char **config_path);
+static int parse_args(int argc, char **argv, const char **config_path,
+		      const char **config_string);
 static void usage(FILE * stream, char *path);
 static void version();
 static void kill_child(int signum, siginfo_t * siginfo, void *unused);
@@ -109,15 +110,22 @@ static int close_pipe(int pipe_fd[]);
 int main(int argc, char **argv)
 {
 	const char *config_path = "config.json";
+	const char *config_string = NULL;
 	int err;
 	json_t *config;
 	json_error_t error;
 
-	if (parse_args(argc, argv, &config_path)) {
+	if (parse_args(argc, argv, &config_path, &config_string)) {
 		return 1;
 	}
 
-	config = json_load_file(config_path, JSON_REJECT_DUPLICATES, &error);
+	if (config_string) {
+		config =
+		    json_loads(config_string, JSON_REJECT_DUPLICATES, &error);
+	} else {
+		config =
+		    json_load_file(config_path, JSON_REJECT_DUPLICATES, &error);
+	}
 	if (!config) {
 		LOG("error on %s:%d: %s\n", config_path, error.line,
 		    error.text);
@@ -140,7 +148,8 @@ int main(int argc, char **argv)
 	return err;
 }
 
-static int parse_args(int argc, char **argv, const char **config_path)
+static int parse_args(int argc, char **argv, const char **config_path,
+		      const char **config_string)
 {
 	int c, option_index;
 	static struct option long_options[] = {
@@ -148,12 +157,13 @@ static int parse_args(int argc, char **argv, const char **config_path)
 		{"verbose", no_argument, &verbose, 1},
 		{"version", no_argument, NULL, 'v'},
 		{"config", required_argument, NULL, 'c'},
+		{"config-string", required_argument, NULL, 's'},
 		{},
 	};
 
 	while (1) {
 		option_index = 0;
-		c = getopt_long(argc, argv, "hVvc:", long_options,
+		c = getopt_long(argc, argv, "hVvc:s:", long_options,
 				&option_index);
 		if (c == -1) {
 			break;
@@ -172,6 +182,9 @@ static int parse_args(int argc, char **argv, const char **config_path)
 			exit(0);
 		case 'c':
 			*config_path = optarg;
+			break;
+		case 's':
+			*config_string = optarg;
 			break;
 		default:	/* '?' */
 			usage(stderr, argv[0]);
@@ -192,6 +205,8 @@ static void usage(FILE * stream, char *path)
 		"  -v, --version\tPrint version information and exit\n");
 	fprintf(stream,
 		"  -c, --config=PATH\tOverride config.json with an alternate path\n");
+	fprintf(stream,
+		"  -s, --config-string=JSON\tSpecify config JSON on the command line, overriding --config and its PATH\n");
 }
 
 static void version()
