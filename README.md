@@ -158,7 +158,7 @@ New [user namespaces][user_namespaces.7] support the
 `/proc/{pid}/{path}` files `setgroups`, `uid_map`, and `gid_map`
 discussed in [`user_namespaces(7)`][user_namespaces.7].
 
-* **`mount`** (optional, object) which may contain:
+* **`user`** (optional, object) which may contain:
   * **`path`** (optional, string, incompatible with other siblings)
     the absolute path to a network namespace which the container
     process should join.
