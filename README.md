@@ -599,10 +599,11 @@ performing network setup)
 Each hook receives the container process's PID in the host [PID
 namespace][namespaces.7] on its [stdin][stdin.3].  Its stdout and
 stderr are inherited from the host process.  The hooks are executed in
-the listed order, and a nonzero exit code from any hook will cause the
-host process to abandon further hook execution, [`SIGKILL`][signal.7]
-the container process.  The host process resumes the usual
-[lifecycle](#lifecycle) at “waits on child death”.
+the listed order, the host process waits until each hook exits before
+executing the next, and a nonzero exit code from any hook will cause
+the host process to abandon further hook execution,
+[`SIGKILL`][signal.7] the container process.  The host process resumes
+the usual [lifecycle](#lifecycle) at “waits on child death”.
 
 #### Example
 
@@ -646,8 +647,9 @@ place (the ccon config file).
   post-stop event.
 
 Its [standard streams][stdin.3] are inherited from the host process.
-The hooks are executed in the listed order, and a nonzero exit code
-from any hook will cause the host process to print a message to
+The hooks are executed in the listed order, the host process waits
+until each hook exits before executing the next, and a nonzero exit
+code from any hook will cause the host process to print a message to
 stderr, after which it continues as if the hook had exited with zero.
 
 #### Example
