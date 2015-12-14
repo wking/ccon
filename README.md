@@ -371,9 +371,10 @@ for [`sethostname`][gethostname.2].
 
 After the container setup is finished, the container process can
 optionally adjust its state and execute the configured code.  If
-**`process`** isn't specified, the container process will block until
-killed by an external signal (which can be useful to hold a container
-open while other processes join and do the real work).
+**`process`** isn't specified, the container process will exit (with
+an exit code of zero) instead of executing a user process (which can
+be useful for the creation phase of a workflow that separates creation
+from execution).
 
 * **`process`** (optional, object) configuring the container process
   after the container is setup.
@@ -466,8 +467,8 @@ is complete.  The process will inherit any open file descriptors
   passed to [`execvpe`][exec.3].  The first argument (**`args[0]`**)
   is also used as the path, unless [**`path`**](#path) is set.
 
-If unset, the container process will block until killed by an external
-signal (see [Process](#process)).
+If unset, the container process will exit with status zero instead of
+executing new code (see [Process](#process)).
 
 ##### Example
 

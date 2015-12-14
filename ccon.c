@@ -74,7 +74,6 @@ static void usage(FILE * stream, char *path);
 static void version();
 static void kill_child(int signum, siginfo_t * siginfo, void *unused);
 static void reap_child(int signum, siginfo_t * siginfo, void *unused);
-static void die(int signum);
 static int validate_config(json_t * config);
 static int validate_version(json_t * config);
 static int run_container(json_t * config);
@@ -90,7 +89,6 @@ static void exec_container_process(json_t * config, int exec_fd);
 static void exec_process(json_t * process, int exec_fd);
 static int get_host_exec_fd(json_t * config, int *exec_fd);
 static int run_hooks(json_t * config, const char *name, pid_t cpid);
-static void block_forever();
 static int get_namespace_type(const char *name, int *nstype);
 static int get_clone_flags(json_t * config, int *flags);
 static int join_namespaces(json_t * config);
@@ -242,11 +240,6 @@ static void reap_child(int signum, siginfo_t * siginfo, void *unused)
 	}
 
 	return;
-}
-
-static void die(int signum)
-{
-	exit(1);
 }
 
 static int validate_config(json_t * config)
@@ -797,10 +790,8 @@ static void exec_container_process(json_t * config, int exec_fd)
 
 	process = json_object_get(config, "process");
 	if (!process) {
-		LOG("process not defined, blocking forever\n");
-		block_forever();
-		LOG("container block failed\n");
-		return;
+		LOG("process not defined, exiting\n");
+		exit(0);
 	}
 
 	exec_process(process, exec_fd);
@@ -816,10 +807,8 @@ static void exec_process(json_t * process, int exec_fd)
 
 	value = json_object_get(process, "args");
 	if (!value) {
-		LOG("args not specified, blocking forever\n");
-		block_forever();
-		LOG("container block failed\n");
-		goto cleanup;
+		LOG("args not specified, exiting\n");
+		exit(0);
 	}
 
 	argv = json_array_of_strings_value(value);
@@ -1029,25 +1018,6 @@ static int run_hooks(json_t * config, const char *name, pid_t cpid)
 	}
 
 	return 0;
-}
-
-static void block_forever()
-{
-	sigset_t mask;
-
-	if (signal(SIGHUP, die) == SIG_ERR ||
-	    signal(SIGINT, die) == SIG_ERR || signal(SIGTERM, die) == SIG_ERR) {
-		PERROR("signal");
-		return;
-	}
-
-	if (sigemptyset(&mask) == -1) {
-		PERROR("sigemptyset");
-		return;
-	}
-	sigsuspend(&mask);
-	PERROR("sigsuspend");
-	return;
 }
 
 static int get_namespace_type(const char *name, int *nstype)
