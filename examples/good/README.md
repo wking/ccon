@@ -5,6 +5,8 @@ Examples of successful patterns:
     namespace](net-host-root).
   * [Create a new network namespace bridged to the host and bind to a
     low numbered port in the new network namespace](net-veth-root).
+  * [Create a container, execute a process inside it, and delete the
+    container with separate steps](create-exec-delete-root).
 
 * Unprivileged user calling ccon:
   * [Launch a container process that pivots to a local

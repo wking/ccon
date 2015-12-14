@@ -1,0 +1,52 @@
+{
+  "version": "0.1.0",
+  "namespaces": {
+    "mount": {
+      "path": null,
+      "mounts": [
+        {
+          "target": "/proc",
+          "type": "proc",
+          "flags": [
+            "MS_PRIVATE",
+            "MS_REC"
+          ]
+        },
+        {
+          "target": "/proc",
+          "type": "proc",
+          "flags": [
+            "MS_NOSUID",
+            "MS_NOEXEC",
+            "MS_NODEV"
+          ]
+        }
+      ]
+    },
+    "ipc": {"path": null},
+    "net": {"path": null},
+    "pid": {},
+    "uts": {"path": null}
+  },
+  "process": {
+    "user": {
+      "uid": 0,
+      "gid": 0
+    },
+    "cwd": "/tmp",
+    "capabilities": [
+      "CAP_AUDIT_WRITE",
+      "CAP_KILL",
+      "CAP_NET_BIND_SERVICE",
+      "CAP_NET_RAW"
+    ],
+    "args": [
+      "busybox",
+      "sh"
+    ],
+    "env": [
+      "PATH=/bin:/usr/bin",
+      "TERM=xterm"
+    ]
+  }
+}

@@ -1,0 +1,225 @@
+#!/usr/bin/env python3
+#
+# ccon-ced(1) - Wrap ccon for separate create, exec, and delete actions
+# Copyright (C) 2015 W. Trevor King <wking@tremily.us>
+#
+# This program is free software: you can redistribute it and/or modify
+# it under the terms of the GNU General Public License as published by
+# the Free Software Foundation, either version 3 of the License, or
+# (at your option) any later version.
+#
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU General Public License for more details.
+#
+# You should have received a copy of the GNU General Public License
+# along with this program.  If not, see <http://www.gnu.org/licenses/>.
+#
+# Requires Python 3.3+ for os.pipe2 [1].
+#
+# [1]: https://docs.python.org/3/library/os.html#os.pipe2
+
+"""Wrap ccon for separate create, exec, and delete actions.
+"""
+
+import argparse
+import inspect
+import json
+import os
+import shutil
+import subprocess
+import sys
+import textwrap
+import uuid
+
+
+if not hasattr(subprocess, 'run'):  # Python <= 3.4
+    def _run(args, check=False):
+        if check:
+            return subprocess.check_call(args)
+        raise NotImplementedError(check)
+    subprocess.run = _run
+
+
+def version():
+    """Print version information and exit.
+    """
+    os.execlp('ccon', '--version')
+
+
+def _exec_ccon(config, verbose=False):
+    args = ['/home/wking/bin/ccon']
+    if verbose:
+        args.append('--verbose')
+    # os.pipe opens with O_CLOEXEC since Python 3.4
+    read, write = os.pipe2(0)
+    os.write(write, json.dumps(config).encode('UTF-8'))
+    os.close(write)
+    args.extend(['--config', '/proc/self/fd/{}'.format(read)])
+    os.execvp(args[0], args)
+
+
+def create(config, root, id=None, verbose=False):
+    """Create a container from a bundle directory.
+    """
+    if id is None:
+        id = uuid.uuid4().hex
+    with open(config, 'r') as f:
+        config = json.load(f)
+    if 'hooks' not in config:
+        config['hooks'] = {}
+    if 'pre-start' not in config['hooks']:
+        config['hooks']['pre-start'] = []
+    args = [sys.argv[0]]
+    if verbose:
+        args.append('--verbose')
+    args.extend(['hook', '--id', id])
+    config['hooks']['pre-start'].append({'args': args, 'host': True})
+    _exec_ccon(config=config, verbose=verbose)
+
+
+def _exec(config, root, id, verbose=False):
+    """
+    Launch a process in an existing container.
+
+    Namespaces that explicitly set 'path' to null will have their
+    paths replaced by paths referencing the existing container
+    namespace.  For example:
+
+    {
+      "namespaces": {
+        "pid": {},
+        "mnt": {"path": null},
+        "uts": {"path": "/proc/123/ns/uts"}
+      },
+      ...
+    }
+
+    will create a new PID namespace, join the existing container mount
+    namespace (e.g. /tmp/container-id/mnt), and join the UTS namespace
+    at /proc/123/ns/uts.
+    """
+    with open(config, 'r') as f:
+        config = json.load(f)
+    for name, ns  in config.get('namespaces').items():
+        basename = name
+        if name == 'mount':
+            basename = 'mnt'
+        if ns.get('path', 'unset') == None:
+            ns['path'] = os.path.join(root, id, basename)
+    _exec_ccon(config=config, verbose=verbose)
+
+
+def delete(root, id, verbose=False):
+    """
+    Delete an existing container.
+
+    This just removes the container's namespace directory to block
+    further 'exec' calls, it doesn't actually kill processes in the
+    container.
+    """
+    directory = os.path.join(root, id)
+    for basename in os.listdir(directory):
+        path = os.path.join(directory, basename)
+        if verbose:
+            sys.stderr.write('unmount {}\n'.format(path))
+        subprocess.run(['umount', path], check=True)
+    if verbose:
+        sys.stderr.write('unmount {}\n'.format(directory))
+    subprocess.run(['umount', directory], check=True)
+    if verbose:
+        sys.stderr.write('recursively remove {}\n'.format(directory))
+    shutil.rmtree(directory)
+
+
+def hook(root, id, verbose=False):
+    """Helper for bind-mounting /proc/{pid}/ns/*.'
+    """
+    pid = int(sys.stdin.read())
+    sys.stdin.close()
+    old = os.path.join('/proc', str(pid), 'ns')
+    new = os.path.join(root, id)
+    if verbose:
+        sys.stderr.write('create new directory {}\n'.format(new))
+    os.makedirs(new)
+    if verbose:
+        sys.stderr.write('bind mount {} to itself\n'.format(new))
+    subprocess.run(['mount', '--bind', new, new], check=True)
+    if verbose:
+        sys.stderr.write('recursively make {} private\n'.format(new))
+    subprocess.run(['mount', '--make-rprivate', new], check=True)
+    for basename in os.listdir(old):
+        if basename == 'pid':
+            # no point in saving this, since create process will soon exit
+            continue
+        old_path = os.path.join(old, basename)
+        new_path = os.path.join(new, basename)
+        if verbose:
+            sys.stderr.write('create empty file {}\n'.format(new_path))
+        with open(new_path, 'wb') as f:
+            pass  # create an empty file
+        if verbose:
+            sys.stderr.write(
+                'bind-mount {} to {}\n'.format(old_path, new_path))
+        subprocess.run(['mount', '--bind', old_path, new_path], check=True)
+
+
+def main():
+    parser = argparse.ArgumentParser(
+        description=__doc__.strip(),
+        formatter_class=argparse.RawDescriptionHelpFormatter)
+    parser.add_argument(
+        '-V', '--verbose', action='store_true',
+        help='enable ccon debugging messages on stderr')
+    parser.add_argument(
+        '--root', metavar='PATH', default=os.environ.get('TMPDIR', '/tmp'),
+        help=(
+            'Root path for namespace bind-mounts (defaults to the TMPDIR '
+            'environment variable, falling back to /tmp).'))
+    commands = parser.add_subparsers(
+        title='commands',
+        description=(
+            'For help on a particular command, run: '
+            "'%(prog)s ... <command> --help'."))
+    for command, func in [
+            ('version', version),
+            ('create', create),
+            ('exec', _exec),
+            ('delete', delete),
+            ('hook', hook),
+            ]:
+        doc = textwrap.dedent(func.__doc__).strip().replace('%', '%%')
+        subparser = commands.add_parser(
+            command,
+            help=doc.splitlines()[0],
+            description=doc,
+            formatter_class=argparse.RawDescriptionHelpFormatter)
+        subparser.set_defaults(func=func)
+        if command in ['create', 'exec', 'delete', 'hook']:
+            subparser.add_argument(
+                '--id', metavar='ID',
+                required=command not in ['create', 'hook'],
+                help='The container ID.')
+        if command in ['create', 'exec']:
+            subparser.add_argument(
+                '--config', metavar='PATH', default='{}.json'.format(command),
+                help='Override the config path (defaults to {}.json).'
+                    .format(command))
+
+    args = parser.parse_args()
+
+    if not getattr(args, 'func', None):
+        parser.print_usage()
+        sys.exit(1)
+
+    if args.func == help:
+        arg_names = ['command']
+    else:
+        (arg_names, varargs, varkw) = inspect.getargs(args.func.__code__)
+    kwargs = {key: getattr(args, key) for key in arg_names if key in args}
+    args.func(**kwargs)
+
+
+if __name__ == '__main__':
+    main()
