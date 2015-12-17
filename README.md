@@ -226,7 +226,7 @@ processes inside a user namespace.
   * **`path`** (optional, string, incompatible with a **`mounts`**
     sibling) the absolute path to a network namespace which the
     container process should join.
-  * **`mount`** (optional, array, incompatible with a **`path`**
+  * **`mounts`** (optional, array, incompatible with a **`path`**
     sibling) an ordered list of mounts to perform.  Array entries are
     objects with fields based on the [`mount`][mount.2] call:
     * **`type`** (string) of mount (see
