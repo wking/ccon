@@ -256,6 +256,7 @@ static void reap_child(int signum, siginfo_t * siginfo, void *unused)
 static int validate_config(json_t * config)
 {
 	json_t *value;
+	json_error_t error;
 	int err;
 
 	if (!json_is_object(config)) {
@@ -272,7 +273,99 @@ static int validate_config(json_t * config)
 	if (err) {
 		return err;
 	}
-	// TODO: actually validate the data
+	/* FIXME: indent is buggy and needs this to handle INDENT-OFF */
+
+/* *INDENT-OFF* */
+	err = json_unpack_ex(config, &error, JSON_STRICT | JSON_VALIDATE_ONLY,
+	  "{"
+	    "s?s,"	/* "version": "0.1.0" */
+	    "s?{"	/* "namespaces": { */
+	      "s?{,"	/* "user": { */
+	        "s?s,"	/* "path": "/proc/123/ns/user */
+	        "s?b,"	/* "setgroups": false */
+	        "s?[*],"	/* "uidMappings": [...] */
+	        "s?[*]"	/* "gidMappings": [...] */
+	      "},"	/* }  (user) */
+	      "s?{,"	/* "mount": { */
+	        "s?s,"	/* "path": "/proc/123/ns/mnt */
+	        "s?[*]"	/* "mounts": [...] */
+	      "},"	/* }  (mount) */
+	      "s?{"	/* "pid": {...} */
+	        "s?s,"	/* "path": "/proc/123/ns/pid */
+	      "},"	/* }  (pid) */
+	      "s?{,"	/* "net": {...} */
+	        "s?s,"	/* "path": "/proc/123/ns/net */
+	      "},"	/* }  (net) */
+	      "s?{,"	/* "ipc": {...} */
+	        "s?s,"	/* "path": "/proc/123/ns/ipc */
+	      "},"	/* }  (ipc) */
+	      "s?{,"	/* "uts": {...} */
+	        "s?s,"	/* "path": "/proc/123/ns/uts */
+	      "},"	/* }  (uts) */
+	    "},"	/* }  (namespaces) */
+	    "s?{"	/* "process": { */
+	      "s?{"	/* "user": { */
+	        "s?i,"	/* "uid": 0 */
+	        "s?i,"	/* "gid": 0 */
+	        "s?[*]"	/* "additionalGids": [...] */
+	      "}"	/* }  (user) */
+	      "s?s,"	/* "cwd": "/root" */
+	      "s?[*],"	/* "capabilities": [...] */
+	      "s?[*],"	/* "args": [...] */
+	      "s?s,"	/* "path": "busybox" */
+	      "s?b,"	/* "host": true */
+	      "s?[*],"	/* "env": [...] */
+	    "},"	/* }  (process) */
+	    "s?{"	/* "hooks": { */
+	      "s?[*],"	/* "pre-start": [...] */
+	      "s?[*]"	/* "post-stop": [...] */
+	    "},"	/* }  (hooks) */
+	  "}",
+	  "version",
+	  "namespaces",
+	    "user",
+	      "path",
+	      "setgroups",
+	      "uidMappings",
+	      "gidMappings",
+	    "mount",
+	      "path",
+	      "mounts",
+	    "pid",
+	      "path",
+	    "net",
+	      "path",
+	    "ipc",
+	      "path",
+	    "uts",
+	      "path",
+	  "process",
+	    "user",
+	      "uid",
+	      "gid",
+	      "additionalGids",
+	    "cwd",
+	    "capabilities",
+	    "args",
+	    "path",
+	    "host",
+	    "env",
+	  "hooks",
+	    "pre-start",
+	    "post-stop"
+	);
+/* *INDENT-ON* */
+	if (err) {
+		LOG("validation error: %s\n", error.text);
+		return err;
+	}
+
+	/*
+	 * TODO, validate:
+	 * * v0.1.0 spec doesn't contain process.host
+	 * * array values (process.env, hooks.pre-start, ...)
+	 * * incompatibilities (e.g. user.path and user.setgroups)
+	 */
 	return 0;
 }
 
