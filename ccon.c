@@ -127,8 +127,8 @@ int main(int argc, char **argv)
 		    json_load_file(config_path, JSON_REJECT_DUPLICATES, &error);
 	}
 	if (!config) {
-		LOG("error on %s:%d: %s\n", config_path, error.line,
-		    error.text);
+		LOG("error on %s:%d:%d: %s\n", config_path, error.line,
+		    error.column, error.text);
 		return 1;
 	}
 
