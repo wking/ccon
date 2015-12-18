@@ -139,12 +139,12 @@ The ccon version represented in the config file.
 A set of namespaces to be created or joined by the container process.
 Keys match the long-form options from [`unshare`][unshare.1] and
 [`nsenter`][nsenter.1] without their leading hyphens.  For each
-namespace entry, the presence of a ``*path*`` key means the container
+namespace entry, the presence of a **`path`** key means the container
 process will join an existing namespace at the absolute path specified
-by the ``*path*`` value.  The absence of a ``*path*`` key means a new
+by the **`path`** value.  The absence of a **`path`** key means a new
 namespace will be created.  For new namespaces, there may be
 per-namespace configuration in the namespace object.  If there is no
-``*namespace*`` entry or its value is an empty object, the container
+**`namespace`** entry or its value is an empty object, the container
 process will inherit all its namespaces from the host process.
 
 * **`namespaces`** (optional, object) containing entries for each new
