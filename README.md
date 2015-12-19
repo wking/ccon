@@ -595,7 +595,8 @@ performing network setup)
 
 * **`pre-start`** (optional, array of objects) holds [process
   objects](#process) (like [**`process`**](#process) except for stdin
-  handling) to run after the pre-start event.
+  handling and the lack of [**`host`**](#host)) to run after the
+  pre-start event.
 
 Each hook receives the container process's PID in the host [PID
 namespace][namespaces.7] on its [stdin][stdin.3].  Its stdout and
@@ -644,8 +645,8 @@ hooks](#pre-start-hooks), and it's nice to configure both in the same
 place (the ccon config file).
 
 * **`post-stop`** (optional, array of objects) holds [process
-  objects](#process) (like [**`process`**](#process)) to run after the
-  post-stop event.
+  objects](#process) (like [**`process`**](#process) except for the
+  lack of [**`host`**](#host)) to run after the post-stop event.
 
 Its [standard streams][stdin.3] are inherited from the host process.
 The hooks are executed in the listed order, the host process waits
