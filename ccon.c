@@ -56,6 +56,7 @@ typedef struct child_func_args {
 	json_t *config;
 	int pipe_in[2];
 	int pipe_out[2];
+	int exec_fd;
 } child_func_args_t;
 
 extern char **environ;
@@ -81,13 +82,14 @@ static int run_container(json_t * config);
 static int handle_parent(json_t * config, pid_t cpid, int *to_child,
 			 int *from_child);
 static int child_func(void *arg);
-static int handle_child(json_t * config, int *to_parent, int *from_parent);
+static int handle_child(json_t * config, int *to_parent, int *from_parent,
+			int *exec_fd);
 static int set_working_directory(json_t * config);
 static int set_user_group(json_t * config);
 static int _capng_name_to_capability(const char *name);
 static int set_capabilities(json_t * config);
-static void exec_container_process(json_t * config, int exec_fd);
-static void exec_process(json_t * process, int exec_fd);
+static void exec_container_process(json_t * config, int *exec_fd);
+static void exec_process(json_t * process, int *exec_fd);
 static int get_host_exec_fd(json_t * config, int *exec_fd);
 static int run_hooks(json_t * config, const char *name, pid_t cpid);
 static int get_namespace_type(const char *name, int *nstype);
@@ -303,6 +305,7 @@ static int run_container(json_t * config)
 	child_args.pipe_in[1] = -1;
 	child_args.pipe_out[0] = -1;
 	child_args.pipe_out[1] = -1;
+	child_args.exec_fd = -1;
 
 	if (get_clone_flags(config, &flags)) {
 		return 1;
@@ -324,6 +327,11 @@ static int run_container(json_t * config)
 	child_args.pipe_in[1] = pipe_in[1];
 	child_args.pipe_out[0] = pipe_out[0];
 	child_args.pipe_out[1] = pipe_out[1];
+
+	if (get_host_exec_fd(config, &child_args.exec_fd)) {
+		err = 1;
+		goto cleanup;
+	}
 
 	stack = malloc(STACK_SIZE);
 	if (!stack) {
@@ -374,6 +382,16 @@ static int run_container(json_t * config)
 		goto cleanup;
 	}
 	pipe_out[1] = -1;
+	if (child_args.exec_fd >= 0) {
+		if (close(child_args.exec_fd) == -1) {
+			PERROR("close container-process executable");
+			child_args.exec_fd = -1;
+			err = 1;
+			goto cleanup;
+		}
+	}
+	child_args.exec_fd = -1;
+
 	err = handle_parent(config, cpid, &pipe_in[1], &pipe_out[0]);
 
  cleanup:
@@ -389,6 +407,12 @@ static int run_container(json_t * config)
 	}
 	if (close_pipe(pipe_out)) {
 		err = 1;
+	}
+	if (child_args.exec_fd >= 0) {
+		if (close(child_args.exec_fd) == -1) {
+			PERROR("close container-process executable");
+			err = 1;
+		}
 	}
 	if (stack) {
 		free(stack);
@@ -500,7 +524,7 @@ static int child_func(void *arg)
 	child_args->pipe_out[0] = -1;
 	err =
 	    handle_child(child_args->config, &child_args->pipe_out[1],
-			 &child_args->pipe_in[0]);
+			 &child_args->pipe_in[0], &child_args->exec_fd);
 	if (err) {
 		LOG("child failed\n");
 	}
@@ -512,15 +536,22 @@ static int child_func(void *arg)
 	if (close_pipe(child_args->pipe_out)) {
 		err = 1;
 	}
+	if (child_args->exec_fd >= 0) {
+		if (close(child_args->exec_fd) == -1) {
+			PERROR("close container-process executable");
+			err = 1;
+		}
+	}
 	return err;
 }
 
-static int handle_child(json_t * config, int *to_parent, int *from_parent)
+static int handle_child(json_t * config, int *to_parent, int *from_parent,
+			int *exec_fd)
 {
 	char *line = NULL;
 	size_t allocated = 0, len;
 	ssize_t n;
-	int err = 0, exec_fd = -1;
+	int err = 0;
 
 	n = getline_fd(&line, &allocated, *from_parent);
 	if (n == -1) {
@@ -538,10 +569,6 @@ static int handle_child(json_t * config, int *to_parent, int *from_parent)
 	free(line);
 	allocated = 0;
 	line = NULL;
-
-	if (get_host_exec_fd(config, &exec_fd)) {
-		return 1;
-	}
 
 	if (join_namespaces(config)) {
 		err = 1;
@@ -616,12 +643,6 @@ static int handle_child(json_t * config, int *to_parent, int *from_parent)
 	err = 1;
 
  cleanup:
-	if (exec_fd >= 0) {
-		if (close(exec_fd)) {
-			PERROR("close user-specified executable file");
-			err = 1;
-		}
-	}
 	if (line != NULL) {
 		free(line);
 	}
@@ -793,7 +814,7 @@ static int set_capabilities(json_t * config)
 	return 0;
 }
 
-static void exec_container_process(json_t * config, int exec_fd)
+static void exec_container_process(json_t * config, int *exec_fd)
 {
 	json_t *process;
 
@@ -807,7 +828,7 @@ static void exec_container_process(json_t * config, int exec_fd)
 	return;
 }
 
-static void exec_process(json_t * process, int exec_fd)
+static void exec_process(json_t * process, int *exec_fd)
 {
 	char *path = NULL;
 	char **argv = NULL, **env = NULL;
@@ -837,13 +858,13 @@ static void exec_process(json_t * process, int exec_fd)
 		env = environ;
 	}
 
-	if (exec_fd >= 0) {
+	if (exec_fd && *exec_fd >= 0) {
 		LOG("execute host executable:");
 		for (i = 0; argv[i]; i++) {
 			LOG(" %s", argv[i]);
 		}
 		LOG("\n");
-		execveat(exec_fd, "", argv, env, AT_EMPTY_PATH);
+		execveat(*exec_fd, "", argv, env, AT_EMPTY_PATH);
 		PERROR("execveat");
 		goto cleanup;
 	}
@@ -897,6 +918,8 @@ static int get_host_exec_fd(json_t * config, int *exec_fd)
 {
 	json_t *process, *v1, *v2;
 	const char *arg0;
+
+	*exec_fd = -1;
 
 	process = json_object_get(config, "process");
 	if (!process) {
@@ -1007,7 +1030,7 @@ static int run_hooks(json_t * config, const char *name, pid_t cpid)
 					return 1;
 				}
 			}
-			exec_process(hook, -1);
+			exec_process(hook, NULL);
 			close_pipe(pipe_fd);
 			return 1;
 		}

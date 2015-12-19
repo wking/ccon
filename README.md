@@ -48,11 +48,11 @@ setup.  Here's an outline of the lifecycle:
 
 | Host process              | Container process           |
 | ------------------------- | --------------------------- |
+| opens host executable     |                             |
 | clones child →            | (clone unshares namespaces) |
 | sets user-ns mappings     | blocks on user-ns mappings  |
 | sends mappings-complete → |                             |
-| blocks on full namespace  | opens host executable       |
-|                           | joins namespaces            |
+| blocks on full namespace  | joins namespaces            |
 |                           | mounts filesystems          |
 |                           | ← sends namespaces-complete |
 | runs pre-start hooks      | blocks on exec-message      |
