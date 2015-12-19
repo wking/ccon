@@ -631,7 +631,7 @@ Which will create new `nginx-0` and `nginx-0/container` cgroups in the
 [unified hierarchy][cgroups-unified] (if they don't already exist) and
 add the container process to that cgroup.
 
-#### Post-start hooks
+#### Post-stop hooks
 
 Hooks run after the host process has reaped the container process.
 You could handle this in the shell with:
