@@ -297,6 +297,12 @@ static int run_container(json_t * config)
 	pid_t cpid;
 	int err = 0;
 
+	child_args.config = NULL;
+	child_args.pipe_in[0] = -1;
+	child_args.pipe_in[1] = -1;
+	child_args.pipe_out[0] = -1;
+	child_args.pipe_out[1] = -1;
+
 	if (get_clone_flags(config, &flags)) {
 		return 1;
 	}
