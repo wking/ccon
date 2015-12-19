@@ -49,7 +49,7 @@ setup.  Here's an outline of the lifecycle:
 | Host process              | Container process           |
 | ------------------------- | --------------------------- |
 | clones child →            | (clone unshares namespaces) |
-| set user-ns mappings      | blocks on user-ns mappings  |
+| sets user-ns mappings     | blocks on user-ns mappings  |
 | sends mappings-complete → |                             |
 | blocks on full namespace  | opens host executable       |
 |                           | joins namespaces            |
