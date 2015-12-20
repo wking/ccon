@@ -52,11 +52,17 @@ static int execveat(int fd, const char *path, char **argv, char **envp,
 }
 #endif
 
+typedef struct namespace_fd {
+	int type;
+	int fd;
+} namespace_fd_t;
+
 typedef struct child_func_args {
 	json_t *config;
 	int pipe_in[2];
 	int pipe_out[2];
 	int exec_fd;
+	namespace_fd_t *namespace_fds;	/* end of array when type == 0 */
 } child_func_args_t;
 
 extern char **environ;
@@ -83,7 +89,7 @@ static int handle_parent(json_t * config, pid_t cpid, int *to_child,
 			 int *from_child);
 static int child_func(void *arg);
 static int handle_child(json_t * config, int *to_parent, int *from_parent,
-			int *exec_fd);
+			int *exec_fd, namespace_fd_t ** namespace_fds);
 static int set_working_directory(json_t * config);
 static int set_user_group(json_t * config);
 static int _capng_name_to_capability(const char *name);
@@ -91,10 +97,11 @@ static int set_capabilities(json_t * config);
 static void exec_container_process(json_t * config, int *exec_fd);
 static void exec_process(json_t * process, int *exec_fd);
 static int get_host_exec_fd(json_t * config, int *exec_fd);
+static int get_namespace_fds(json_t * config, namespace_fd_t ** namespace_fds);
 static int run_hooks(json_t * config, const char *name, pid_t cpid);
 static int get_namespace_type(const char *name, int *nstype);
 static int get_clone_flags(json_t * config, int *flags);
-static int join_namespaces(json_t * config);
+static int join_namespaces(json_t * config, namespace_fd_t ** namespaces_fds);
 static int set_user_namespace_mappings(json_t * config, pid_t cpid);
 static int set_user_map(json_t * user, pid_t cpid, const char *key,
 			const char *filename);
@@ -298,7 +305,7 @@ static int run_container(json_t * config)
 	int pipe_in[2], pipe_out[2];
 	int flags = SIGCHLD;
 	pid_t cpid;
-	int err = 0;
+	int err = 0, i;
 
 	child_args.config = NULL;
 	child_args.pipe_in[0] = -1;
@@ -306,6 +313,7 @@ static int run_container(json_t * config)
 	child_args.pipe_out[0] = -1;
 	child_args.pipe_out[1] = -1;
 	child_args.exec_fd = -1;
+	child_args.namespace_fds = NULL;
 
 	if (get_clone_flags(config, &flags)) {
 		return 1;
@@ -329,6 +337,11 @@ static int run_container(json_t * config)
 	child_args.pipe_out[1] = pipe_out[1];
 
 	if (get_host_exec_fd(config, &child_args.exec_fd)) {
+		err = 1;
+		goto cleanup;
+	}
+
+	if (get_namespace_fds(config, &child_args.namespace_fds)) {
 		err = 1;
 		goto cleanup;
 	}
@@ -391,6 +404,22 @@ static int run_container(json_t * config)
 		}
 	}
 	child_args.exec_fd = -1;
+	if (child_args.namespace_fds) {
+		for (i = 0; child_args.namespace_fds[i].type; i++) {
+			if (child_args.namespace_fds[i].fd >= 0) {
+				if (close(child_args.namespace_fds[i].fd) == -1) {
+					PERROR
+					    ("close namespace file descriptor");
+					child_args.namespace_fds[i].fd = -1;
+					err = 1;
+					goto cleanup;
+				}
+				child_args.namespace_fds[i].fd = -1;
+			}
+		}
+		free(child_args.namespace_fds);
+		child_args.namespace_fds = NULL;
+	}
 
 	err = handle_parent(config, cpid, &pipe_in[1], &pipe_out[0]);
 
@@ -413,6 +442,18 @@ static int run_container(json_t * config)
 			PERROR("close container-process executable");
 			err = 1;
 		}
+	}
+	if (child_args.namespace_fds) {
+		for (i = 0; child_args.namespace_fds[i].type; i++) {
+			if (child_args.namespace_fds[i].fd >= 0) {
+				if (close(child_args.namespace_fds[i].fd) == -1) {
+					PERROR
+					    ("close namespace file descriptor");
+					err = 1;
+				}
+			}
+		}
+		free(child_args.namespace_fds);
 	}
 	if (stack) {
 		free(stack);
@@ -506,7 +547,7 @@ static int handle_parent(json_t * config, pid_t cpid, int *to_child,
 static int child_func(void *arg)
 {
 	child_func_args_t *child_args = (child_func_args_t *) arg;
-	int err = 0;
+	int err = 0, i;
 
 	if (close(child_args->pipe_in[1]) == -1) {
 		PERROR("close host-to-container pipe write-end");
@@ -524,7 +565,8 @@ static int child_func(void *arg)
 	child_args->pipe_out[0] = -1;
 	err =
 	    handle_child(child_args->config, &child_args->pipe_out[1],
-			 &child_args->pipe_in[0], &child_args->exec_fd);
+			 &child_args->pipe_in[0], &child_args->exec_fd,
+			 &child_args->namespace_fds);
 	if (err) {
 		LOG("child failed\n");
 	}
@@ -542,11 +584,23 @@ static int child_func(void *arg)
 			err = 1;
 		}
 	}
+	if (child_args->namespace_fds) {
+		for (i = 0; child_args->namespace_fds[i].type; i++) {
+			if (child_args->namespace_fds[i].fd >= 0) {
+				if (close(child_args->namespace_fds[i].fd) ==
+				    -1) {
+					PERROR
+					    ("close namespace file descriptor");
+				}
+			}
+		}
+		free(child_args->namespace_fds);
+	}
 	return err;
 }
 
 static int handle_child(json_t * config, int *to_parent, int *from_parent,
-			int *exec_fd)
+			int *exec_fd, namespace_fd_t ** namespace_fds)
 {
 	char *line = NULL;
 	size_t allocated = 0, len;
@@ -570,7 +624,7 @@ static int handle_child(json_t * config, int *to_parent, int *from_parent,
 	allocated = 0;
 	line = NULL;
 
-	if (join_namespaces(config)) {
+	if (join_namespaces(config, namespace_fds)) {
 		err = 1;
 		goto cleanup;
 	}
@@ -963,6 +1017,52 @@ static int get_host_exec_fd(json_t * config, int *exec_fd)
 	return 0;
 }
 
+static int get_namespace_fds(json_t * config, namespace_fd_t ** namespace_fds)
+{
+	json_t *namespaces, *value, *path;
+	const char *key, *p;
+	int i = 0;
+	int len = 0;
+
+	namespaces = json_object_get(config, "namespaces");
+	if (!namespaces) {
+		return 0;
+	}
+
+	json_object_foreach(namespaces, key, value) {
+		path = json_object_get(value, "path");
+		if (!path) {
+			continue;
+		}
+
+		if (i + 1 >= len) {
+			len += 10;
+			*namespace_fds =
+			    realloc(*namespace_fds,
+				    sizeof(namespace_fd_t) * len);
+			if (!*namespace_fds) {
+				PERROR("realloc");
+				return 1;
+			}
+			memset(&(*namespace_fds)[i], 0,
+			       sizeof(namespace_fd_t) * (len - i));
+		}
+
+		p = json_string_value(path);
+		if (get_namespace_type(key, &(*namespace_fds)[i].type)) {
+			return 1;
+		}
+		LOG("open %s namespace at %s\n", key, p);
+		(*namespace_fds)[i].fd = open(p, O_RDONLY);
+		if ((*namespace_fds)[i++].fd == -1) {
+			PERROR("open");
+			return 1;
+		}
+	}
+
+	return 0;
+}
+
 static int run_hooks(json_t * config, const char *name, pid_t cpid)
 {
 	pid_t hpid;
@@ -1099,11 +1199,11 @@ static int get_clone_flags(json_t * config, int *flags)
 	return 0;
 }
 
-static int join_namespaces(json_t * config)
+static int join_namespaces(json_t * config, namespace_fd_t ** namespace_fds)
 {
 	json_t *namespaces, *value, *path;
-	const char *key, *p;
-	int fd, nstype;
+	const char *key;
+	int nstype, i;
 
 	namespaces = json_object_get(config, "namespaces");
 	if (!namespaces) {
@@ -1115,27 +1215,29 @@ static int join_namespaces(json_t * config)
 		if (!path) {
 			continue;
 		}
-		p = json_string_value(path);
 		if (get_namespace_type(key, &nstype)) {
 			return 1;
 		}
-		LOG("join %s namespace at %s\n", key, p);
-		fd = open(p, O_RDONLY);
-		if (fd == -1) {
-			PERROR("open");
+		for (i = 0;
+		     (*namespace_fds)[i].type != nstype
+		     && (*namespace_fds)[i].type > 0; i++) {
+			;
+		}
+		if ((*namespace_fds)[i].type != nstype) {
+			LOG("no namespace file descriptor found for %s", key);
 			return 1;
 		}
-		if (setns(fd, nstype) == -1) {
+		LOG("join %s namespace\n", key);
+		if (setns((*namespace_fds)[i].fd, nstype) == -1) {
 			PERROR("setns");
-			if (close(fd) == -1) {
-				PERROR("close");
-			}
 			return 1;
 		}
-		if (close(fd) == -1) {
+		if (close((*namespace_fds)[i].fd) == -1) {
 			PERROR("close");
+			(*namespace_fds)[i].fd = -1;
 			return 1;
 		}
+		(*namespace_fds)[i].fd = -1;
 	}
 
 	return 0;

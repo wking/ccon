@@ -49,6 +49,7 @@ setup.  Here's an outline of the lifecycle:
 | Host process              | Container process           |
 | ------------------------- | --------------------------- |
 | opens host executable     |                             |
+| opens namespace files     |                             |
 | clones child →            | (clone unshares namespaces) |
 | sets user-ns mappings     | blocks on user-ns mappings  |
 | sends mappings-complete → |                             |
@@ -72,6 +73,11 @@ result in that potential action (e.g. writing to
 [`/proc/{pid}/setgroups`][user_namespaces.7] or calling
 [`mount`][mount.2] being skipped, while the rest of ccon carries on as
 usual.
+
+Users who need to join namespaces *before* unsharing namespaces can
+use [`nsenter`][nsenter.1] or a wrapping ccon invocation to join those
+namespaces before the main ccon invocation creates the new mount
+namespace.
 
 ## Configuration
 
