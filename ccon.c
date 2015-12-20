@@ -1075,16 +1075,16 @@ static int get_clone_flags(json_t * config, int *flags)
 
 static int join_namespaces(json_t * config)
 {
-	json_t *namespace, *value, *path;
+	json_t *namespaces, *value, *path;
 	const char *key, *p;
 	int fd, nstype;
 
-	namespace = json_object_get(config, "namespaces");
-	if (!namespace) {
+	namespaces = json_object_get(config, "namespaces");
+	if (!namespaces) {
 		return 0;
 	}
 
-	json_object_foreach(namespace, key, value) {
+	json_object_foreach(namespaces, key, value) {
 		path = json_object_get(value, "path");
 		if (!path) {
 			continue;
@@ -1117,14 +1117,14 @@ static int join_namespaces(json_t * config)
 
 static int set_user_namespace_mappings(json_t * config, pid_t cpid)
 {
-	json_t *namespace, *user;
+	json_t *namespaces, *user;
 
-	namespace = json_object_get(config, "namespaces");
-	if (!namespace) {
+	namespaces = json_object_get(config, "namespaces");
+	if (!namespaces) {
 		return 0;
 	}
 
-	user = json_object_get(namespace, "user");
+	user = json_object_get(namespaces, "user");
 	if (!user) {
 		return 0;
 	}
