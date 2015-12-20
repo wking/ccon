@@ -22,6 +22,7 @@
 #include <errno.h>
 #include <fcntl.h>
 #include <getopt.h>
+#include <grp.h>
 #include <libgen.h>
 #include <sched.h>
 #include <signal.h>
