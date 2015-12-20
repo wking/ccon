@@ -363,12 +363,14 @@ static int run_container(json_t * config)
 	if (close(pipe_in[0]) == -1) {
 		PERROR("close host-to-container pipe read-end");
 		pipe_in[0] = -1;
+		err = 1;
 		goto cleanup;
 	}
 	pipe_in[0] = -1;
 	if (close(pipe_out[1]) == -1) {
 		PERROR("close container-to-host pipe write-end");
 		pipe_out[1] = -1;
+		err = 1;
 		goto cleanup;
 	}
 	pipe_out[1] = -1;
