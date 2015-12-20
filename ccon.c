@@ -1713,13 +1713,11 @@ static char **json_array_of_strings_value(json_t * array)
 	char **a = NULL;
 	json_t *value;
 	size_t i;
-	int err = 0;
 
 	i = json_array_size(array);
 	a = malloc(sizeof(char *) * (i + 1));
 	if (!a) {
 		PERROR("malloc");
-		err = 1;
 		goto cleanup;
 	}
 	memset(a, 0, sizeof(char *) * (i + 1));
@@ -1727,8 +1725,7 @@ static char **json_array_of_strings_value(json_t * array)
 		a[i] = strdup(json_string_value(value));
 		if (!a[i]) {
 			PERROR("strdup");
-			err = 1;
-			break;
+			goto cleanup;
 		}
 	}
 	return a;
