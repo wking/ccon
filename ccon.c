@@ -29,6 +29,7 @@
 #include <string.h>
 #include <unistd.h>
 #include <sys/mount.h>
+#include <sys/prctl.h>
 #include <sys/syscall.h>
 #include <sys/types.h>
 #include <sys/wait.h>
@@ -548,6 +549,12 @@ static int child_func(void *arg)
 {
 	child_func_args_t *child_args = (child_func_args_t *) arg;
 	int err = 0, i;
+
+	if (prctl(PR_SET_PDEATHSIG, SIGKILL)) {
+		PERROR("prctl");
+		err = 1;
+		goto cleanup;
+	}
 
 	if (close(child_args->pipe_in[1]) == -1) {
 		PERROR("close host-to-container pipe write-end");
