@@ -459,7 +459,10 @@ namespace][user_namespaces.7]).
 ##### Example
 
 ```json
-"cwd": "/root"
+"capabilities": [
+  "CAP_NET_BIND_SERVICE",
+  "CAP_NET_RAW"
+]
 ```
 
 #### Arguments
