@@ -91,10 +91,10 @@ static int handle_parent(json_t * config, pid_t cpid, int *to_child,
 static int child_func(void *arg);
 static int handle_child(json_t * config, int *to_parent, int *from_parent,
 			int *exec_fd, namespace_fd_t ** namespace_fds);
-static int set_working_directory(json_t * config);
-static int set_user_group(json_t * config);
+static int set_working_directory(json_t * process);
+static int set_user_group(json_t * process);
 static int _capng_name_to_capability(const char *name);
-static int set_capabilities(json_t * config);
+static int set_capabilities(json_t * process);
 static void exec_container_process(json_t * config, int *exec_fd);
 static void exec_process(json_t * process, int *exec_fd);
 static int get_host_exec_fd(json_t * config, int *exec_fd);
@@ -779,21 +779,6 @@ static int handle_child(json_t * config, int *to_parent, int *from_parent,
 	}
 	*from_parent = -1;
 
-	if (set_working_directory(config)) {
-		err = 1;
-		goto cleanup;
-	}
-
-	if (set_user_group(config)) {
-		err = 1;
-		goto cleanup;
-	}
-
-	if (set_capabilities(config)) {
-		err = 1;
-		goto cleanup;
-	}
-
 	exec_container_process(config, exec_fd);
 	err = 1;
 
@@ -804,15 +789,10 @@ static int handle_child(json_t * config, int *to_parent, int *from_parent,
 	return err;
 }
 
-static int set_working_directory(json_t * config)
+static int set_working_directory(json_t * process)
 {
 	const char *path;
-	json_t *process, *cwd;
-
-	process = json_object_get(config, "process");
-	if (!process) {
-		return 0;
-	}
+	json_t *cwd;
 
 	cwd = json_object_get(process, "cwd");
 	if (!cwd) {
@@ -833,18 +813,13 @@ static int set_working_directory(json_t * config)
 	return 0;
 }
 
-static int set_user_group(json_t * config)
+static int set_user_group(json_t * process)
 {
 	uid_t uid;
 	gid_t gid, *groups = NULL;
-	json_t *process, *user, *v1, *v2;
+	json_t *user, *v1, *v2;
 	size_t i, n = 0;
 	int err = 0;
-
-	process = json_object_get(config, "process");
-	if (!process) {
-		return 0;
-	}
 
 	user = json_object_get(process, "user");
 	if (!user) {
@@ -919,17 +894,12 @@ static int _capng_name_to_capability(const char *name)
 	return capng_name_to_capability(name + 4);
 }
 
-static int set_capabilities(json_t * config)
+static int set_capabilities(json_t * process)
 {
-	json_t *process, *capabilities, *value;
+	json_t *capabilities, *value;
 	const char *name;
 	size_t i;
 	int cap;
-
-	process = json_object_get(config, "process");
-	if (!process) {
-		return 0;
-	}
 
 	capabilities = json_object_get(process, "capabilities");
 	if (!capabilities) {
@@ -994,6 +964,18 @@ static void exec_process(json_t * process, int *exec_fd)
 	if (!value) {
 		LOG("args not specified, exiting\n");
 		exit(0);
+	}
+
+	if (set_working_directory(process)) {
+		goto cleanup;
+	}
+
+	if (set_user_group(process)) {
+		goto cleanup;
+	}
+
+	if (set_capabilities(process)) {
+		goto cleanup;
 	}
 
 	argv = json_array_of_strings_value(value);
