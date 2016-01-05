@@ -25,6 +25,7 @@ than [LXC][lxc.container.conf.5]).
     * [User](#user)
     * [Current working directory](#current-working-directory)
     * [Capabilities](#capabilities)
+    * [Disable new privileges](#disable-new-privileges)
     * [Arguments](#arguments)
     * [Path](#path)
     * [Host](#host)
@@ -504,6 +505,20 @@ namespace][user_namespaces.7]).
 ]
 ```
 
+#### Disable new privileges
+
+[Block the user-configured process from some otherwise-allowed
+privilege escallation][no_new_privs] (e.g. via setuid programs).
+
+* **`disableNewPrivileges`** (optional, boolean) If true, set
+  [`PR_SET_NO_NEW_PRIVS`][prctl.2].
+
+##### Example
+
+```json
+"disableNewPrivileges": true
+```
+
 #### Arguments
 
 The command that the container process executes after container setup
@@ -820,6 +835,7 @@ be distributed under the GPLv3+.
 [gethostname.2]: http://man7.org/linux/man-pages/man2/gethostname.2.html
 [mount.2]: http://man7.org/linux/man-pages/man2/mount.2.html
 [pivot_root.2]: http://man7.org/linux/man-pages/man2/pivot_root.2.html
+[prctl.2]: http://man7.org/linux/man-pages/man2/prctl.2.html
 [setgid.2]: http://man7.org/linux/man-pages/man2/setgid.2.html
 [setuid.2]: http://man7.org/linux/man-pages/man2/setuid.2.html
 [syscall.2]: http://man7.org/linux/man-pages/man2/syscall.2.html
@@ -844,4 +860,5 @@ be distributed under the GPLv3+.
 [cgroups]: https://www.kernel.org/doc/Documentation/cgroup-v1/cgroups.txt
 [cgroups-unified]: https://www.kernel.org/doc/Documentation/cgroup-v2.txt
 [devpts]: https://www.kernel.org/doc/Documentation/filesystems/devpts.txt
+[no_new_privs]: https://www.kernel.org/doc/Documentation/prctl/no_new_privs.txt
 [sd_listen_fds]: http://www.freedesktop.org/software/systemd/man/sd_listen_fds.html

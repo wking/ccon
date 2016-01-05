@@ -99,6 +99,7 @@ static int set_working_directory(json_t * process);
 static int set_user_group(json_t * process);
 static int _capng_name_to_capability(const char *name);
 static int set_capabilities(json_t * process);
+static int set_new_privs(json_t * process);
 static void exec_container_process(json_t * config, int *socket, int *exec_fd);
 static void exec_process(json_t * process, int dup_stdin, int *socket,
 			 int *exec_fd);
@@ -321,6 +322,7 @@ static int validate_config(json_t * config)
 	      "}"	/* }  (user) */
 	      "s?s,"	/* "cwd": "/root" */
 	      "s?[*],"	/* "capabilities": [...] */
+	      "s?b,"	/* "disableNewPrivileges": true */
 	      "s?[*],"	/* "args": [...] */
 	      "s?s,"	/* "path": "busybox" */
 	      "s?b,"	/* "host": true */
@@ -357,6 +359,7 @@ static int validate_config(json_t * config)
 	      "additionalGids",
 	    "cwd",
 	    "capabilities",
+	    "disableNewPrivileges",
 	    "args",
 	    "path",
 	    "host",
@@ -373,7 +376,8 @@ static int validate_config(json_t * config)
 
 	/*
 	 * TODO, validate:
-	 * * v0.1.0 spec doesn't contain process.host
+	 * * process.host only in v0.2.0+ configs
+	 * * process.disableNewPrivileges only in v0.4.0+ configs
 	 * * array values (process.env, hooks.pre-start, ...)
 	 */
 	return 0;
@@ -1023,6 +1027,26 @@ static int set_capabilities(json_t * process)
 	return 0;
 }
 
+static int set_new_privs(json_t * process)
+{
+	json_t *disable_new_privs;
+
+	disable_new_privs = json_object_get(process, "disableNewPrivileges");
+	if (!disable_new_privs) {
+		return 0;
+	}
+
+	if (json_boolean_value(disable_new_privs)) {
+		LOG("set no_new_privs\n");
+		if (prctl(PR_SET_NO_NEW_PRIVS, 1, 0, 0, 0)) {
+			PERROR("prctl");
+			return 1;
+		}
+	}
+
+	return 0;
+}
+
 static void exec_container_process(json_t * config, int *socket, int *exec_fd)
 {
 	json_t *process;
@@ -1077,6 +1101,10 @@ static void exec_process(json_t * process, int dup_stdin, int *socket,
 	}
 
 	if (set_capabilities(process)) {
+		goto cleanup;
+	}
+
+	if (set_new_privs(process)) {
 		goto cleanup;
 	}
 
