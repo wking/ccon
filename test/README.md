@@ -26,6 +26,26 @@ digit.  The first digit classifies the test:
 
 1 - Process-configuration compliance.
 
+## Dependencies
+
+* A [POSIX shell][sh.1] for `sh`.
+* [GNU Core Utilities][coreutils] for [`cat`][cat.1], [`echo`][echo.1],
+  [`head`][head.1], [`id`][id.1], and [`pwd`][pwd.1].
+* [Grep][] for [`grep`][grep.1].
+* [Sed][] for [`sed`][sed.1].
+
+[coreutils]: http://www.gnu.org/software/coreutils/coreutils.html
+[Grep]: https://www.gnu.org/software/grep/
 [prove]: http://perldoc.perl.org/prove.html
+[sed]: http://sed.sourceforge.net/
 [Sharness]: http://mlafeldt.github.io/sharness/
 [submodule]: http://git-scm.com/docs/git-submodule
+
+[cat.1]: http://pubs.opengroup.org/onlinepubs/9699919799/utilities/cat.html
+[echo.1]: http://pubs.opengroup.org/onlinepubs/9699919799/utilities/echo.html
+[grep.1]: http://pubs.opengroup.org/onlinepubs/9699919799/utilities/grep.html
+[head.1]: http://pubs.opengroup.org/onlinepubs/9699919799/utilities/head.html
+[id.1]: http://pubs.opengroup.org/onlinepubs/9699919799/utilities/id.html
+[pwd.1]: http://pubs.opengroup.org/onlinepubs/9699919799/utilities/pwd.html
+[sed.1]: http://pubs.opengroup.org/onlinepubs/9699919799/utilities/sed.html
+[sh.1]: http://pubs.opengroup.org/onlinepubs/9699919799/utilities/sh.html
