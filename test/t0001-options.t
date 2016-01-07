@@ -19,11 +19,6 @@ test_description='Test option parsing'
 
 . ./sharness.sh
 
-command -v cat >/dev/null 2>/dev/null && test_set_prereq CAT
-command -v echo >/dev/null 2>/dev/null && test_set_prereq ECHO
-command -v head >/dev/null 2>/dev/null && test_set_prereq HEAD
-command -v sed >/dev/null 2>/dev/null && test_set_prereq SED
-
 test_expect_success ECHO,HEAD 'Test --help' '
 	ccon --help >actual &&
 	head -n1 actual >actual-first-line &&

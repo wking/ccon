@@ -24,6 +24,8 @@ digit.  The first digit classifies the test:
 
 0 - Basic ccon functionality like command-line argument parsing.
 
+1 - Process-configuration compliance.
+
 [prove]: http://perldoc.perl.org/prove.html
 [Sharness]: http://mlafeldt.github.io/sharness/
 [submodule]: http://git-scm.com/docs/git-submodule
