@@ -30,8 +30,10 @@
 #include <unistd.h>
 #include <sys/mount.h>
 #include <sys/prctl.h>
+#include <sys/socket.h>
 #include <sys/syscall.h>
 #include <sys/types.h>
+#include <sys/un.h>
 #include <sys/wait.h>
 
 #include <cap-ng.h>
@@ -41,9 +43,10 @@
 #define MAX_PATH 1024
 
 /* messages passed between the host and container */
-#define USER_NAMESPACE_MAPPING_COMPLETE "user-namespace-mapping-complete\n"
-#define CONTAINER_SETUP_COMPLETE "container-setup-complete\n"
-#define EXEC_PROCESS "exec-process\n"
+#define MESSAGE_SIZE 80
+#define USER_NAMESPACE_MAPPING_COMPLETE "user-namespace-mapping-complete"
+#define CONTAINER_SETUP_COMPLETE "container-setup-complete"
+#define EXEC_PROCESS "exec-process"
 
 #ifndef execveat
 static int execveat(int fd, const char *path, char **argv, char **envp,
@@ -60,8 +63,7 @@ typedef struct namespace_fd {
 
 typedef struct child_func_args {
 	json_t *config;
-	int pipe_in[2];
-	int pipe_out[2];
+	int socket;
 	int exec_fd;
 	namespace_fd_t *namespace_fds;	/* end of array when type == 0 */
 } child_func_args_t;
@@ -86,11 +88,10 @@ static void reap_child(int signum, siginfo_t * siginfo, void *unused);
 static int validate_config(json_t * config);
 static int validate_version(json_t * config);
 static int run_container(json_t * config);
-static int handle_parent(json_t * config, pid_t cpid, int *to_child,
-			 int *from_child);
+static int handle_parent(json_t * config, pid_t cpid, int *socket);
 static int child_func(void *arg);
-static int handle_child(json_t * config, int *to_parent, int *from_parent,
-			int *exec_fd, namespace_fd_t ** namespace_fds);
+static int handle_child(json_t * config, int *socket, int *exec_fd,
+			namespace_fd_t ** namespace_fds);
 static int set_working_directory(json_t * process);
 static int set_user_group(json_t * process);
 static int _capng_name_to_capability(const char *name);
@@ -112,7 +113,6 @@ static int handle_mounts(json_t * config);
 static int pivot_root_remove_old(const char *new_root);
 static int open_in_path(const char *name, int flags);
 static int _wait(pid_t pid, const char *name);
-static ssize_t getline_fd(char **buf, size_t * n, int fd);
 static char **json_array_of_strings_value(json_t * array);
 static int close_pipe(int pipe_fd[]);
 
@@ -396,16 +396,13 @@ static int run_container(json_t * config)
 	struct sigaction act;
 	child_func_args_t child_args;
 	char *stack = NULL, *stack_top;
-	int pipe_in[2], pipe_out[2];
+	int sockets[2];
 	int flags = SIGCHLD;
 	pid_t cpid;
 	int err = 0, i;
 
 	child_args.config = NULL;
-	child_args.pipe_in[0] = -1;
-	child_args.pipe_in[1] = -1;
-	child_args.pipe_out[0] = -1;
-	child_args.pipe_out[1] = -1;
+	child_args.socket = -1;
 	child_args.exec_fd = -1;
 	child_args.namespace_fds = NULL;
 
@@ -413,22 +410,13 @@ static int run_container(json_t * config)
 		return 1;
 	}
 
-	if (pipe(pipe_in) == -1) {
-		PERROR("pipe");
+	if (socketpair(AF_UNIX, SOCK_SEQPACKET, 0, sockets) == -1) {
+		PERROR("socketpair");
 		return 1;
 	}
 
-	if (pipe(pipe_out) == -1) {
-		PERROR("pipe");
-		err = 1;
-		goto cleanup;
-	}
-
 	child_args.config = config;
-	child_args.pipe_in[0] = pipe_in[0];
-	child_args.pipe_in[1] = pipe_in[1];
-	child_args.pipe_out[0] = pipe_out[0];
-	child_args.pipe_out[1] = pipe_out[1];
+	child_args.socket = sockets[1];
 
 	if (get_host_exec_fd(config, &child_args.exec_fd)) {
 		err = 1;
@@ -475,20 +463,13 @@ static int run_container(json_t * config)
 	}
 
 	LOG("launched container process with PID %d\n", cpid);
-	if (close(pipe_in[0]) == -1) {
-		PERROR("close host-to-container pipe read-end");
-		pipe_in[0] = -1;
+	if (close(sockets[1]) == -1) {
+		PERROR("close container-side socket");
+		sockets[1] = -1;
 		err = 1;
 		goto cleanup;
 	}
-	pipe_in[0] = -1;
-	if (close(pipe_out[1]) == -1) {
-		PERROR("close container-to-host pipe write-end");
-		pipe_out[1] = -1;
-		err = 1;
-		goto cleanup;
-	}
-	pipe_out[1] = -1;
+	sockets[1] = -1;
 	if (child_args.exec_fd >= 0) {
 		if (close(child_args.exec_fd) == -1) {
 			PERROR("close container-process executable");
@@ -515,7 +496,7 @@ static int run_container(json_t * config)
 		child_args.namespace_fds = NULL;
 	}
 
-	err = handle_parent(config, cpid, &pipe_in[1], &pipe_out[0]);
+	err = handle_parent(config, cpid, &sockets[0]);
 
  cleanup:
 	cpid = child_pid;
@@ -525,10 +506,7 @@ static int run_container(json_t * config)
 		}
 		child_pid = -1;
 	}
-	if (close_pipe(pipe_in)) {
-		err = 1;
-	}
-	if (close_pipe(pipe_out)) {
+	if (close_pipe(sockets)) {
 		err = 1;
 	}
 	if (child_args.exec_fd >= 0) {
@@ -555,11 +533,12 @@ static int run_container(json_t * config)
 	return err;
 }
 
-static int handle_parent(json_t * config, pid_t cpid, int *to_child,
-			 int *from_child)
+static int handle_parent(json_t * config, pid_t cpid, int *socket)
 {
-	char *line = NULL;
-	size_t allocated = 0, len;
+	char buf[MESSAGE_SIZE];
+	struct iovec iov;
+	struct msghdr msg = { NULL, 0, &iov, 1, NULL, 0, 0 };
+	size_t len;
 	ssize_t n;
 	int err = 0;
 
@@ -567,37 +546,32 @@ static int handle_parent(json_t * config, pid_t cpid, int *to_child,
 		return 1;
 	}
 
-	line = USER_NAMESPACE_MAPPING_COMPLETE;
-	len = strlen(line);
-	n = write(*to_child, line, len);
-	if (n < 0 || (size_t) n != len) {
-		PERROR("write to container");
-		return 1;
-	}
-	line = NULL;
-
-	n = getline_fd(&line, &allocated, *from_child);
+	iov.iov_base = (void *)USER_NAMESPACE_MAPPING_COMPLETE;
+	iov.iov_len = strlen(iov.iov_base);
+	n = sendmsg(*socket, &msg, 0);
 	if (n == -1) {
-		err = 1;
-		goto cleanup;
-	}
-	len = (size_t) n;
-	if (strncmp
-	    (CONTAINER_SETUP_COMPLETE, line,
-	     strlen(CONTAINER_SETUP_COMPLETE)) != 0) {
-		LOG("unexpected message from container(%d): %.*s\n", (int)len,
-		    (int)len - 1, line);
-		goto cleanup;
-	}
-	free(line);
-	line = NULL;
-
-	if (close(*from_child) == -1) {
-		PERROR("close container-to-host pipe read-end");
-		*from_child = -1;
+		PERROR("sendmsg");
+		return 1;
+	} else if (n != iov.iov_len) {
+		LOG("did not send the expected number of bytes: %d != %d\n",
+		    (int)n, (int)iov.iov_len);
 		return 1;
 	}
-	*from_child = -1;
+
+	iov.iov_base = (void *)buf;
+	iov.iov_len = MESSAGE_SIZE;
+	n = recvmsg(*socket, &msg, 0);
+	if (n == -1) {
+		PERROR("recvmsg");
+		return 1;
+	}
+	len = strlen(CONTAINER_SETUP_COMPLETE);
+	if (len != n ||
+	    strncmp(CONTAINER_SETUP_COMPLETE, iov.iov_base, len) != 0) {
+		LOG("unexpected message from container (%d): %.*s\n", (int)n,
+		    (int)n, (char *)iov.iov_base);
+		return 1;
+	}
 
 	if (run_hooks(config, "pre-start", cpid)) {
 		err = 1;
@@ -610,31 +584,30 @@ static int handle_parent(json_t * config, pid_t cpid, int *to_child,
 		goto wait;
 	}
 
-	line = EXEC_PROCESS;
-	len = strlen(line);
-	n = write(*to_child, line, len);
-	if (n < 0 || (size_t) n != len) {
-		PERROR("write to container");
+	iov.iov_base = (void *)EXEC_PROCESS;
+	iov.iov_len = strlen(iov.iov_base);
+	n = sendmsg(*socket, &msg, 0);
+	if (n == -1) {
+		PERROR("sendmsg");
+		return 1;
+	} else if (n != iov.iov_len) {
+		LOG("did not send the expected number of bytes: %d != %d\n",
+		    (int)n, (int)iov.iov_len);
 		return 1;
 	}
-	line = NULL;
 
  wait:
-	if (close(*to_child) == -1) {
-		PERROR("close host-to-container pipe write-end");
-		*to_child = -1;
+	if (close(*socket) == -1) {
+		PERROR("close host-side socket");
+		*socket = -1;
 		return 1;
 	}
-	*to_child = -1;
+	*socket = -1;
 
 	err = _wait(cpid, "container");
 
 	(void)run_hooks(config, "post-stop", 0);
 
- cleanup:
-	if (line != NULL) {
-		free(line);
-	}
 	return err;
 }
 
@@ -649,34 +622,20 @@ static int child_func(void *arg)
 		goto cleanup;
 	}
 
-	if (close(child_args->pipe_in[1]) == -1) {
-		PERROR("close host-to-container pipe write-end");
-		child_args->pipe_in[1] = -1;
-		err = 1;
-		goto cleanup;
-	}
-	child_args->pipe_in[1] = -1;
-	if (close(child_args->pipe_out[0]) == -1) {
-		PERROR("close container-to-host pipe read-end");
-		child_args->pipe_out[0] = -1;
-		err = 1;
-		goto cleanup;
-	}
-	child_args->pipe_out[0] = -1;
 	err =
-	    handle_child(child_args->config, &child_args->pipe_out[1],
-			 &child_args->pipe_in[0], &child_args->exec_fd,
-			 &child_args->namespace_fds);
+	    handle_child(child_args->config, &child_args->socket,
+			 &child_args->exec_fd, &child_args->namespace_fds);
 	if (err) {
 		LOG("child failed\n");
 	}
 
  cleanup:
-	if (close_pipe(child_args->pipe_in)) {
-		err = 1;
-	}
-	if (close_pipe(child_args->pipe_out)) {
-		err = 1;
+	if (child_args->socket >= 0) {
+		if (close(child_args->socket)) {
+			PERROR("close container-side socket");
+			err = 1;
+		}
+		child_args->socket = -1;
 	}
 	if (child_args->exec_fd >= 0) {
 		if (close(child_args->exec_fd) == -1) {
@@ -699,93 +658,74 @@ static int child_func(void *arg)
 	return err;
 }
 
-static int handle_child(json_t * config, int *to_parent, int *from_parent,
-			int *exec_fd, namespace_fd_t ** namespace_fds)
+static int handle_child(json_t * config, int *socket, int *exec_fd,
+			namespace_fd_t ** namespace_fds)
 {
-	char *line = NULL;
-	size_t allocated = 0, len;
+	char buf[MESSAGE_SIZE];
+	struct iovec iov = { buf, MESSAGE_SIZE };
+	struct msghdr msg = { NULL, 0, &iov, 1, NULL, 0, 0 };
+	size_t len;
 	ssize_t n;
-	int err = 0;
 
-	n = getline_fd(&line, &allocated, *from_parent);
+	n = recvmsg(*socket, &msg, 0);
 	if (n == -1) {
-		err = 1;
-		goto cleanup;
+		PERROR("recvmsg");
+		return 1;
 	}
-	len = (size_t) n;
-	if (strncmp
-	    (USER_NAMESPACE_MAPPING_COMPLETE, line,
-	     strlen(USER_NAMESPACE_MAPPING_COMPLETE)) != 0) {
-		LOG("unexpected message from host(%d): %.*s\n", (int)len,
-		    (int)len - 1, line);
-		goto cleanup;
+	len = strlen(USER_NAMESPACE_MAPPING_COMPLETE);
+	if (len != n ||
+	    strncmp(USER_NAMESPACE_MAPPING_COMPLETE, iov.iov_base, len) != 0) {
+		LOG("unexpected message from host (%d): %.*s\n", (int)n, (int)n,
+		    (char *)iov.iov_base);
+		return 1;
 	}
-	free(line);
-	allocated = 0;
-	line = NULL;
 
 	if (join_namespaces(config, namespace_fds)) {
-		err = 1;
-		goto cleanup;
+		return 1;
 	}
 
 	if (handle_mounts(config)) {
-		err = 1;
-		goto cleanup;
+		return 1;
 	}
 
-	line = CONTAINER_SETUP_COMPLETE;
-	len = strlen(line);
-	n = write(*to_parent, line, len);
-	if (n < 0 || (size_t) n != len) {
-		PERROR("write to host");
-		line = NULL;	// don't free a string literal
-		err = 1;
-		goto cleanup;
+	iov.iov_base = (char *)CONTAINER_SETUP_COMPLETE;
+	iov.iov_len = strlen(CONTAINER_SETUP_COMPLETE);
+	n = sendmsg(*socket, &msg, 0);
+	if (n == -1) {
+		PERROR("sendmsg");
+		return 1;
+	} else if (n != iov.iov_len) {
+		LOG("did not send the expected number of bytes: %d != %d\n",
+		    (int)n, (int)iov.iov_len);
+		return 1;
 	}
-	line = NULL;
-
-	if (close(*to_parent) == -1) {
-		PERROR("close container-to-host pipe write-end");
-		err = 1;
-		*to_parent = -1;
-		goto cleanup;
-	}
-	*to_parent = -1;
 
 	/* block while parent runs pre-start hooks */
 
-	n = getline_fd(&line, &allocated, *from_parent);
+	iov.iov_base = (char *)buf;
+	iov.iov_len = MESSAGE_SIZE;
+	n = recvmsg(*socket, &msg, 0);
 	if (n == -1) {
-		err = 1;
-		goto cleanup;
+		PERROR("recvmsg");
+		return 1;
 	}
-	len = (size_t) n;
-	if (strncmp(EXEC_PROCESS, line, strlen(EXEC_PROCESS)) != 0) {
-		LOG("unexpected message from host(%d): %.*s\n", (int)len,
-		    (int)len - 1, line);
-		goto cleanup;
+	len = strlen(EXEC_PROCESS);
+	if (len != n || strncmp(EXEC_PROCESS, iov.iov_base, len) != 0) {
+		LOG("unexpected message from host (%d): %.*s\n", (int)n, (int)n,
+		    (char *)iov.iov_base);
+		return 1;
 	}
-	free(line);
-	allocated = 0;
-	line = NULL;
 
-	if (close(*from_parent) == -1) {
-		PERROR("close host-to-container pipe read-end");
-		*from_parent = -1;
-		err = 1;
-		goto cleanup;
+	if (close(*socket) == -1) {
+		PERROR("close container-side socket");
+		*socket = -1;
+		return 1;
 	}
-	*from_parent = -1;
+	*socket = -1;
 
 	exec_container_process(config, exec_fd);
-	err = 1;
 
- cleanup:
-	if (line != NULL) {
-		free(line);
-	}
-	return err;
+	return 1;
 }
 
 static int set_working_directory(json_t * process)
@@ -1882,38 +1822,6 @@ static int pivot_root_remove_old(const char *new_root)
 	}
 
 	return err;
-}
-
-// getline(3) but reading from a file descriptor
-static ssize_t getline_fd(char **buf, size_t * n, int fd)
-{
-	ssize_t size = 0, max = 16384, s;
-	char delim = '\n';
-	size_t block = 512;
-	do {
-		if ((size_t) size == *n) {
-			char *b = realloc(*buf, *n + block);
-			if (b == NULL) {
-				PERROR("realloc");
-				return -1;
-			}
-			*buf = b;
-			*n += block;
-		}
-		s = read(fd, (*buf) + size, 1);
-		if (s == -1) {
-			PERROR("read");
-			return -1;
-		}
-		if (s != 1) {
-			return -1;
-		}
-		size += s;
-		if (size >= max) {
-			return -1;
-		}
-	} while ((*buf)[size - 1] != delim);
-	return size;
 }
 
 // Allocate a null-terminated array of strings from a JSON array.

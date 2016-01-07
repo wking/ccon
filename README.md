@@ -43,8 +43,8 @@ child process to create any new namespaces declared in the config
 file.  The parent process continues running in the host namespace.
 When the child process exits, the host process collects its exit
 status and returns it to the caller.  During an initial setup phase,
-the two processes pass messages on pipes to synchronize the container
-setup.  Here's an outline of the lifecycle:
+the two processes pass messages on a [Unix socket][unix.7] to
+synchronize the container setup.  Here's an outline of the lifecycle:
 
 | Host process              | Container process           |
 | ------------------------- | --------------------------- |
@@ -787,6 +787,7 @@ be distributed under the GPLv3+.
 [namespaces.7]: http://man7.org/linux/man-pages/man7/namespaces.7.html
 [pid_namespaces.7]: http://man7.org/linux/man-pages/man7/pid_namespaces.7.html
 [signal.7]: http://man7.org/linux/man-pages/man7/signal.7.html
+[unix.7]: http://man7.org/linux/man-pages/man7/unix.7.html
 [user_namespaces.7]: http://man7.org/linux/man-pages/man7/user_namespaces.7.html
 [switch_root.8.notes]: http://man7.org/linux/man-pages/man8/switch_root.8.html#NOTES
 
