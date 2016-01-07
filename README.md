@@ -21,6 +21,7 @@ than [LXC][lxc.container.conf.5]).
     * [IPC namespace](#ipc-namespace)
     * [UTS namespace](#uts-namespace)
   * [Process](#process)
+    * [Terminal](#terminal)
     * [User](#user)
     * [Current working directory](#current-working-directory)
     * [Capabilities](#capabilities)
@@ -46,24 +47,27 @@ status and returns it to the caller.  During an initial setup phase,
 the two processes pass messages on a [Unix socket][unix.7] to
 synchronize the container setup.  Here's an outline of the lifecycle:
 
-| Host process              | Container process           |
-| ------------------------- | --------------------------- |
-| opens host executable     |                             |
-| opens namespace files     |                             |
-| clones child →            | (clone unshares namespaces) |
-| sets user-ns mappings     | blocks on user-ns mappings  |
-| sends mappings-complete → |                             |
-| blocks on full namespace  | joins namespaces            |
-|                           | mounts filesystems          |
-|                           | ← sends namespaces-complete |
-| runs pre-start hooks      | blocks on exec-message      |
-| sends exec-message →      |                             |
-| waits on child death      | executes user process       |
-|                           | …                           |
-|                           | dies                        |
-| collects child exit code  |                             |
-| runs post-stop hooks      |                             |
-| exits with child's code   |                             |
+| Host process                     | Container process             |
+| -------------------------------- | ----------------------------- |
+| opens host executable            |                               |
+| opens namespace files            |                               |
+| clones child →                   | (clone unshares namespaces)   |
+| sets user-ns mappings            | blocks on user-ns mappings    |
+| sends mappings-complete →        |                               |
+| blocks on full namespace         | joins namespaces              |
+|                                  | mounts filesystems            |
+|                                  | ← sends namespaces-complete   |
+| runs pre-start hooks             | blocks on exec-message        |
+| sends exec-message →             |                               |
+|                                  | opens the local ptmx          |
+|                                  | ← sends pseudoterminal master |
+| waits on child death             | executes user process         |
+|   splicing standard streams      | …                             |
+|   onto the pseduoterminal master |                               |
+|                                  | dies                          |
+| collects child exit code         |                               |
+| runs post-stop hooks             |                               |
+| exits with child's code          |                               |
 
 A number of those steps are optional.  For details, see the relevant
 section in the [configuration specification](#configuration).  In
@@ -396,6 +400,42 @@ Which will [`execvpe`][exec.3] a [BusyBox][] shell with the host
 process's user and group (possibly mapped by the [user
 namespace](#user-namespace)), working directory, and environment.
 
+#### Terminal
+
+If you launch ccon from a terminal (e.g. [`tty`][tty.1p] or [`test -t
+0`][test.1p] return zero), your [standard input][stdin.3] is already a
+terminal and you probably don't need to worry about this setting.  If
+you launch ccon from a non-terminal process (e.g. from a webserver
+that is communicating with the user over a socket), you may want to
+create a [UNIX 98 psuedoterminal][pty.7] to do things like translate
+the user's control-C into [`SIGINT`][signal.7] for the container.
+
+Containers that do not [pivot root](#mount-namespace) or who otherwise
+keep access to the host [ptmx][pts.4] can create such a pseudoterminal
+by calling opening the [ptmx][pts.4] (e.g. with
+[`posix_openpt`][posix_openpt.3]).
+
+Containers that are pivoting to a new root and mounting their
+[devpts][] with [newinstance][mount.8] will want to ensure that the
+pseudoterminal is created using a devpts instance that will be
+accessible after the pivot, and there are [a number of issues to
+consider][devpts].
+
+* **`terminal`** (optional, boolean) if true, the process will [open
+  its local `/dev/ptmx`][pts.4] (e.g. with
+  [`posix_openpt`][posix_openpt.3]), [`dup`][dup.2] the pseudoterminal
+  slave over its standard streams, and send the pseudoterminal master
+  back to the host process.  The host process will continually copy
+  its [standard input][stdin.3] to that pseudoterminal master and the
+  pseudoterminal master to its [standard output][stdin.3].
+
+##### Example
+
+```json
+"args": ["sh"],
+"terminal": true
+```
+
 #### User
 
 Adjust the user and group IDs before executing the user-specified
@@ -467,9 +507,10 @@ namespace][user_namespaces.7]).
 #### Arguments
 
 The command that the container process executes after container setup
-is complete.  The process will inherit any open file descriptors
-(e.g. the [standard streams][stdin.3] or [systemd's
-`SD_LISTEN_FDS_START`][sd_listen_fds]).
+is complete.  The process will inherit any open file descriptors; for
+example the [standard streams][stdin.3] (unless
+[**`terminal`**](#terminal) is true) or [systemd's
+`SD_LISTEN_FDS_START`][sd_listen_fds].
 
 * **`args`** (optional, array of strings) holds command-line arguments
   passed to [`execvpe`][exec.3].  The first argument (**`args[0]`**)
@@ -608,8 +649,9 @@ performing network setup)
 
 Each hook receives the container process's PID in the host [PID
 namespace][namespaces.7] on its [stdin][stdin.3].  Its stdout and
-stderr are inherited from the host process.  The hooks are executed in
-the listed order, the host process waits until each hook exits before
+stderr are inherited from the host process (unless
+[**`terminal`**](#terminal) is true).  The hooks are executed in the
+listed order, the host process waits until each hook exits before
 executing the next, and a nonzero exit code from any hook will cause
 the host process to abandon further hook execution,
 [`SIGKILL`][signal.7] the container process.  The host process resumes
@@ -656,11 +698,12 @@ place (the ccon config file).
   objects](#process) (like [**`process`**](#process) except for the
   lack of [**`host`**](#host)) to run after the post-stop event.
 
-Its [standard streams][stdin.3] are inherited from the host process.
-The hooks are executed in the listed order, the host process waits
-until each hook exits before executing the next, and a nonzero exit
-code from any hook will cause the host process to print a message to
-stderr, after which it continues as if the hook had exited with zero.
+Its [standard streams][stdin.3] are inherited from the host process
+(unless [**`terminal`**](#terminal) is true).  The hooks are executed
+in the listed order, the host process waits until each hook exits
+before executing the next, and a nonzero exit code from any hook will
+cause the host process to print a message to stderr, after which it
+continues as if the hook had exited with zero.
 
 #### Example
 
@@ -765,9 +808,12 @@ be distributed under the GPLv3+.
 [cgdelete.1]: http://sourceforge.net/p/libcg/libcg/ci/master/tree/doc/man/cgdelete.1
 [id.1]: http://man7.org/linux/man-pages/man1/id.1.html
 [nsenter.1]: http://man7.org/linux/man-pages/man1/nsenter.1.html
+[test.1p]: http://pubs.opengroup.org/onlinepubs/9699919799/utilities/test.html
+[tty.1p]: http://pubs.opengroup.org/onlinepubs/9699919799/utilities/tty.html
 [unshare.1]: http://man7.org/linux/man-pages/man1/unshare.1.html
 [chdir.2]: http://man7.org/linux/man-pages/man2/chdir.2.html
 [clone.2]: http://man7.org/linux/man-pages/man2/clone.2.html
+[dup.2]: http://man7.org/linux/man-pages/man2/dup.2.html
 [execveat.2]: http://man7.org/linux/man-pages/man2/execveat.2.html
 [execveat.2.versions]: http://man7.org/linux/man-pages/man2/execveat.2.html#VERSIONS
 [getgroups.2]: http://man7.org/linux/man-pages/man2/getgroups.2.html
@@ -780,17 +826,22 @@ be distributed under the GPLv3+.
 [environ.3p]: https://www.kernel.org/pub/linux/docs/man-pages/man-pages-posix/
 [exec.3]: http://man7.org/linux/man-pages/man3/exec.3.html
 [getcwd.3]: http://man7.org/linux/man-pages/man3/getcwd.3.html
+[posix_openpt.3]: http://man7.org/linux/man-pages/man3/posix_openpt.3.html
 [stdin.3]: http://man7.org/linux/man-pages/man3/stdin.3.html
+[pts.4]: http://man7.org/linux/man-pages/man4/pty.4.html
 [filesystems.5]: http://man7.org/linux/man-pages/man5/filesystems.5.html
 [lxc.container.conf.5]: https://linuxcontainers.org/lxc/manpages/man5/lxc.container.conf.5.html
 [capabilities.7]: http://man7.org/linux/man-pages/man7/capabilities.7.html
 [namespaces.7]: http://man7.org/linux/man-pages/man7/namespaces.7.html
 [pid_namespaces.7]: http://man7.org/linux/man-pages/man7/pid_namespaces.7.html
+[pty.7]: http://man7.org/linux/man-pages/man7/pty.7.html
 [signal.7]: http://man7.org/linux/man-pages/man7/signal.7.html
 [unix.7]: http://man7.org/linux/man-pages/man7/unix.7.html
 [user_namespaces.7]: http://man7.org/linux/man-pages/man7/user_namespaces.7.html
+[mount.8]: http://man7.org/linux/man-pages/man8/pty.8.html
 [switch_root.8.notes]: http://man7.org/linux/man-pages/man8/switch_root.8.html#NOTES
 
 [cgroups]: https://www.kernel.org/doc/Documentation/cgroup-v1/cgroups.txt
 [cgroups-unified]: https://www.kernel.org/doc/Documentation/cgroup-v2.txt
+[devpts]: https://www.kernel.org/doc/Documentation/filesystems/devpts.txt
 [sd_listen_fds]: http://www.freedesktop.org/software/systemd/man/sd_listen_fds.html

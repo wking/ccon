@@ -1,6 +1,6 @@
-CC := cc
-CFLAGS := $(shell pkg-config --cflags jansson libcap-ng)
-LDFLAGS := $(shell pkg-config --libs-only-L jansson libcap-ng)
+CC := gcc
+CFLAGS := $(shell pkg-config --cflags jansson libcap-ng) -Wall
+LDFLAGS := $(shell pkg-config --libs-only-L jansson libcap-ng) -Wall
 LDLIBS := $(shell pkg-config --libs-only-l jansson libcap-ng)
 
 .PHONY: all clean fmt

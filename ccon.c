@@ -30,7 +30,9 @@
 #include <unistd.h>
 #include <sys/mount.h>
 #include <sys/prctl.h>
+#include <sys/select.h>
 #include <sys/socket.h>
+#include <sys/stat.h>
 #include <sys/syscall.h>
 #include <sys/types.h>
 #include <sys/un.h>
@@ -92,12 +94,14 @@ static int handle_parent(json_t * config, pid_t cpid, int *socket);
 static int child_func(void *arg);
 static int handle_child(json_t * config, int *socket, int *exec_fd,
 			namespace_fd_t ** namespace_fds);
+static int set_terminal(json_t * process, int dup_stdin, int *socket);
 static int set_working_directory(json_t * process);
 static int set_user_group(json_t * process);
 static int _capng_name_to_capability(const char *name);
 static int set_capabilities(json_t * process);
-static void exec_container_process(json_t * config, int *exec_fd);
-static void exec_process(json_t * process, int *exec_fd);
+static void exec_container_process(json_t * config, int *socket, int *exec_fd);
+static void exec_process(json_t * process, int dup_stdin, int *socket,
+			 int *exec_fd);
 static int get_host_exec_fd(json_t * config, int *exec_fd);
 static int get_namespace_fds(json_t * config, namespace_fd_t ** namespace_fds);
 static int run_hooks(json_t * config, const char *name, pid_t cpid);
@@ -117,6 +121,9 @@ static int open_in_path(const char *name, int flags);
 static int _wait(pid_t pid, const char *name);
 static char **json_array_of_strings_value(json_t * array);
 static int close_pipe(int pipe_fd[]);
+static int sendfd(int socket, int *fd);
+static int recvfd(int socket, int *fd);
+static int splice_pseudoterminal_master(int *master);
 
 int main(int argc, char **argv)
 {
@@ -306,6 +313,7 @@ static int validate_config(json_t * config)
 	      "},"	/* }  (uts) */
 	    "},"	/* }  (namespaces) */
 	    "s?{"	/* "process": { */
+	      "s?b,"	/* "terminal": true */
 	      "s?{"	/* "user": { */
 	        "s?i,"	/* "uid": 0 */
 	        "s?i,"	/* "gid": 0 */
@@ -342,6 +350,7 @@ static int validate_config(json_t * config)
 	    "uts",
 	      "path",
 	  "process",
+	    "terminal",
 	    "user",
 	      "uid",
 	      "gid",
@@ -537,12 +546,13 @@ static int run_container(json_t * config)
 
 static int handle_parent(json_t * config, pid_t cpid, int *socket)
 {
+	json_t *process, *terminal = NULL;
 	char buf[MESSAGE_SIZE];
 	struct iovec iov;
 	struct msghdr msg = { NULL, 0, &iov, 1, NULL, 0, 0 };
 	size_t len;
 	ssize_t n;
-	int err = 0, exit = 0;
+	int master = -1, err = 0, exit = 0;
 
 	if (set_user_namespace_mappings(config, cpid)) {
 		err = 1;
@@ -599,6 +609,17 @@ static int handle_parent(json_t * config, pid_t cpid, int *socket)
 		goto wait;
 	}
 
+	process = json_object_get(config, "process");
+	if (process) {
+		terminal = json_object_get(process, "terminal");
+		if (json_boolean_value(terminal)) {
+			if (recvfd(*socket, &master)) {
+				err = 1;
+				goto wait;
+			}
+		}
+	}
+
  wait:
 	if (err) {
 		kill_child(0, NULL, NULL);
@@ -611,6 +632,21 @@ static int handle_parent(json_t * config, pid_t cpid, int *socket)
 		kill_child(0, NULL, NULL);
 	}
 	*socket = -1;
+
+	if (!err && master >= 0) {
+		if (splice_pseudoterminal_master(&master)) {
+			err = 1;
+			kill_child(0, NULL, NULL);
+		}
+	}
+
+	if (master >= 0) {
+		if (close(master) == -1) {
+			PERROR("close pseudoterminal master");
+			err = 1;
+			kill_child(0, NULL, NULL);
+		}
+	}
 
 	exit = _wait(cpid, "container");
 
@@ -727,16 +763,114 @@ static int handle_child(json_t * config, int *socket, int *exec_fd,
 		return 1;
 	}
 
-	if (close(*socket) == -1) {
-		PERROR("close container-side socket");
-		*socket = -1;
-		return 1;
-	}
-	*socket = -1;
-
-	exec_container_process(config, exec_fd);
+	exec_container_process(config, socket, exec_fd);
 
 	return 1;
+}
+
+static int set_terminal(json_t * process, int dup_stdin, int *socket)
+{
+	json_t *terminal;
+	char *slave_name;
+	int err = 0, master = -1, slave = -1;
+
+	terminal = json_object_get(process, "terminal");
+	if (!terminal) {
+		return 0;
+	}
+
+	if (json_boolean_value(terminal)) {
+		if (socket == NULL) {
+			LOG("cannot create a pseudoterminal without a socket for master\n");
+			return 1;
+		}
+
+		LOG("open a pseudoterminal device pair\n");
+		master = posix_openpt(O_RDWR);
+		if (master == -1) {
+			PERROR("posix_openpt");
+			return 1;
+		}
+
+		if (grantpt(master)) {
+			PERROR("grantpt");
+			if (errno == EPERM) {
+				LOG("grantpt permission errors appear nonfatal, so carrying on\n");
+			} else {
+				err = 1;
+				goto cleanup;
+			}
+		}
+
+		if (unlockpt(master)) {
+			PERROR("unlockpt");
+			err = 1;
+			goto cleanup;
+		}
+
+		slave_name = ptsname(master);
+		if (!slave_name) {
+			PERROR("ptsname");
+			err = 1;
+			goto cleanup;
+
+		}
+
+		slave = open(slave_name, O_RDWR);
+		if (slave < 0) {
+			PERROR("open pseudoterminal slave");
+			err = 1;
+			goto cleanup;
+		}
+
+		if (sendfd(*socket, &master)) {
+			err = 1;
+			goto cleanup;
+		}
+
+		if (dup_stdin) {
+			if (dup2(slave, STDIN_FILENO) == -1) {
+				PERROR("dup2");
+				err = 1;
+				goto cleanup;
+			}
+		}
+
+		if (dup2(slave, STDOUT_FILENO) == -1) {
+			PERROR("dup2");
+			err = 1;
+			goto cleanup;
+		}
+
+		if (dup2(slave, STDERR_FILENO) == -1) {
+			PERROR("dup2");
+			err = 1;
+			goto cleanup;
+		}
+
+		if (close(slave)) {
+			PERROR("closing pseudoterminal slave");
+			slave = -1;
+			err = 1;
+			goto cleanup;
+		}
+		slave = -1;
+	}
+
+ cleanup:
+	if (master >= 0) {
+		if (close(master)) {
+			PERROR("closing pseudoterminal master");
+			err = 1;
+		}
+	}
+	if (slave >= 0) {
+		if (close(slave)) {
+			PERROR("closing pseudoterminal slave");
+			err = 1;
+		}
+	}
+	return err;
 }
 
 static int set_working_directory(json_t * process)
@@ -889,7 +1023,7 @@ static int set_capabilities(json_t * process)
 	return 0;
 }
 
-static void exec_container_process(json_t * config, int *exec_fd)
+static void exec_container_process(json_t * config, int *socket, int *exec_fd)
 {
 	json_t *process;
 
@@ -899,11 +1033,12 @@ static void exec_container_process(json_t * config, int *exec_fd)
 		exit(0);
 	}
 
-	exec_process(process, exec_fd);
+	exec_process(process, 1, socket, exec_fd);
 	return;
 }
 
-static void exec_process(json_t * process, int *exec_fd)
+static void exec_process(json_t * process, int dup_stdin, int *socket,
+			 int *exec_fd)
 {
 	char *path = NULL;
 	char **argv = NULL, **env = NULL;
@@ -914,6 +1049,23 @@ static void exec_process(json_t * process, int *exec_fd)
 	if (!value) {
 		LOG("args not specified, exiting\n");
 		exit(0);
+	}
+
+	if (set_terminal(process, dup_stdin, socket)) {
+		goto cleanup;
+	}
+
+	if (socket && *socket >= 0) {
+		if (close(*socket) == -1) {
+			PERROR("close container-side socket");
+			*socket = -1;
+			goto cleanup;
+		}
+		*socket = -1;
+	}
+
+	if (set_working_directory(process)) {
+		goto cleanup;
 	}
 
 	if (set_working_directory(process)) {
@@ -1099,9 +1251,12 @@ static int get_namespace_fds(json_t * config, namespace_fd_t ** namespace_fds)
 static int run_hooks(json_t * config, const char *name, pid_t cpid)
 {
 	pid_t hpid;
-	json_t *hooks, *hook_array, *hook;
+	json_t *hooks, *hook_array, *hook, *terminal;
 	size_t i;
-	int pipe_fd[2], err;
+	int sockets[2], pipe_fd[2], master = -1, err = 0;
+
+	sockets[0] = sockets[1] = -1;
+	pipe_fd[0] = pipe_fd[1] = -1;
 
 	hooks = json_object_get(config, "hooks");
 	if (!hooks) {
@@ -1125,64 +1280,135 @@ static int run_hooks(json_t * config, const char *name, pid_t cpid)
 			/* write to kernel buffer, this is less than PIPE_BUF */
 			if (dprintf(pipe_fd[1], "%d\n", cpid) < 0) {
 				PERROR("dprintf");
-				close_pipe(pipe_fd);
-				return 1;
+				err = 1;
+				goto cleanup;
 			}
 
 			if (close(pipe_fd[1])) {
 				PERROR("close host-to-hook pipe write-end");
-				close_pipe(pipe_fd);
-				return 1;
+				pipe_fd[1] = -1;
+				err = 1;
+				goto cleanup;
 			}
 			pipe_fd[1] = -1;
 
 			if (child_pid < 0) {
-				close_pipe(pipe_fd);
-				return 1;
+				err = 1;
+				goto cleanup;
 			}
+		}
+
+		LOG("create socketpair for hook\n");
+		if (socketpair(AF_UNIX, SOCK_SEQPACKET, 0, sockets) == -1) {
+			PERROR("socketpair");
+			err = 1;
+			goto cleanup;
 		}
 
 		hpid = fork();
 		if (hpid == -1) {
 			PERROR("fork");
-			if (cpid) {
-				close_pipe(pipe_fd);
-			}
-			return 1;
+			err = 1;
+			goto cleanup;
 		}
 
 		if (hpid == 0) {	/* child */
+			if (close(sockets[0])) {
+				PERROR
+				    ("close host side of socket pair after fork");
+				sockets[0] = -1;
+				err = 1;
+				goto cleanup;
+			}
+			sockets[0] = -1;
+
 			if (cpid) {
 				if (dup2(pipe_fd[0], STDIN_FILENO) == -1) {
 					PERROR("dup2");
-					return 1;
+					err = 1;
+					goto cleanup;
 				}
 				if (close(pipe_fd[0])) {
 					PERROR
 					    ("close host-to-hook pipe read-end after stdin dup");
-					return 1;
+					pipe_fd[0] = -1;
+					err = 1;
+					goto cleanup;
 				}
+				pipe_fd[0] = -1;
 			}
-			exec_process(hook, NULL);
-			close_pipe(pipe_fd);
-			return 1;
+
+			exec_process(hook, cpid == 0, &sockets[1], NULL);
+			err = 1;
+			goto cleanup;
 		}
 
 		hook_pid = hpid;
 		LOG("launched hook %d with PID %d\n", (int)i, hpid);
 
+		if (close(sockets[1])) {
+			PERROR("close hook side of socket pair after fork");
+			sockets[1] = -1;
+			err = 1;
+			goto cleanup;
+		}
+		sockets[1] = -1;
+
 		if (cpid && close_pipe(pipe_fd)) {
-			return 1;
+			err = 1;
+			goto cleanup;
+		}
+
+		terminal = json_object_get(hook, "terminal");
+		if (json_boolean_value(terminal)) {
+			if (recvfd(sockets[0], &master)) {
+				err = 1;
+				goto cleanup;
+			}
+		}
+
+		if (master >= 0) {
+			if (splice_pseudoterminal_master(&master)) {
+				err = 1;
+				goto cleanup;
+			}
+		}
+
+		if (master >= 0) {
+			if (close(master)) {
+				PERROR("close pseudoterminal master");
+				master = -1;
+				err = 1;
+				goto cleanup;
+			}
+			master = -1;
 		}
 
 		err = _wait(hpid, "hook");
 		hook_pid = -1;
 		if (cpid && err) {
-			return 1;	/* abort failed pre-start execution */
+			err = 1;	/* abort failed pre-start execution */
+			goto cleanup;
+		} else {
+			err = 0;	/* ignore failed post-stop execution */
 		}
 	}
 
-	return 0;
+ cleanup:
+	if (close_pipe(sockets)) {
+		err = 1;
+	}
+	if (close_pipe(pipe_fd)) {
+		err = 1;
+	}
+	if (master >= 0) {
+		if (close(master)) {
+			PERROR("closing pseudoterminal master");
+			err = 1;
+		}
+	}
+
+	return err;
 }
 
 static int get_namespace_type(const char *name, int *nstype)
@@ -1909,6 +2135,229 @@ static int close_pipe(int pipe_fd[])
 			err = 1;
 		}
 		pipe_fd[1] = -1;
+	}
+
+	return err;
+}
+
+static int sendfd(int socket, int *fd)
+{
+	struct cmsghdr *cmsg;
+	union {
+		char buf[CMSG_SPACE(sizeof(int))];
+		struct cmsghdr align;
+	} u;
+	struct msghdr msg = { 0 };
+	int *fdptr;
+
+	msg.msg_control = u.buf;
+	msg.msg_controllen = sizeof(u.buf), cmsg = CMSG_FIRSTHDR(&msg);
+	cmsg->cmsg_level = SOL_SOCKET;
+	cmsg->cmsg_type = SCM_RIGHTS;
+	cmsg->cmsg_len = CMSG_LEN(sizeof(int));
+	fdptr = (int *)CMSG_DATA(cmsg);
+	*fdptr = *fd;
+	if (sendmsg(socket, &msg, 0) == -1) {
+		PERROR("sendmsg");
+		return 1;
+	}
+
+	if (close(*fd)) {
+		PERROR("close");
+		*fd = -1;
+		return 1;
+	}
+	*fd = -1;
+
+	return 0;
+}
+
+int recvfd(int socket, int *fd)
+{
+	struct cmsghdr *cmsg;
+	union {
+		char buf[CMSG_SPACE(sizeof(int))];
+		struct cmsghdr align;
+	} u;
+	struct msghdr msg = { 0 };
+	int *fdptr;
+
+	msg.msg_control = u.buf;
+	msg.msg_controllen = sizeof(u.buf);
+	if (recvmsg(socket, &msg, 0) == -1) {
+		PERROR("recvmsg");
+		return 1;
+	}
+	cmsg = CMSG_FIRSTHDR(&msg);
+	if (cmsg == NULL || cmsg->cmsg_type != SCM_RIGHTS) {
+		LOG("unexpected message from container (no file descriptor)\n");
+		return 1;
+	}
+	fdptr = (int *)CMSG_DATA(cmsg);
+	*fd = *fdptr;
+
+	return 0;
+}
+
+static int splice_pseudoterminal_master(int *master)
+{
+	fd_set rfds, wfds, efds;
+	char in_buf[1024];
+	char out_buf[1024];
+	ssize_t n;
+	int nfds, err = 0;
+	int in_i = 0, in_len = 0, out_i = 0, out_len = 0, in_open =
+	    1, out_open = 1;
+
+	while (1) {
+		nfds = 0;
+		FD_ZERO(&rfds);
+		FD_ZERO(&wfds);
+		FD_ZERO(&efds);
+
+		if (child_pid < 0) {	/* don't bother piping to a dead process */
+			in_open = in_len = 0;
+		}
+
+		if (in_open && in_len == 0) {	/* wait for new data */
+			FD_SET(STDIN_FILENO, &rfds);
+			FD_SET(STDIN_FILENO, &efds);
+			if (STDIN_FILENO + 1 > nfds) {
+				nfds = STDIN_FILENO + 1;
+			}
+		}
+		if (in_len) {	/* wait to flush buffer */
+			FD_SET(*master, &wfds);
+			FD_SET(*master, &efds);
+			if (*master + 1 > nfds) {
+				nfds = *master + 1;
+			}
+		}
+		if (out_open && out_len == 0) {	/* wait for new data */
+			FD_SET(*master, &rfds);
+			FD_SET(*master, &efds);
+			if (*master + 1 > nfds) {
+				nfds = *master + 1;
+			}
+		}
+		if (out_len) {	/* wait to flush buffer */
+			FD_SET(STDOUT_FILENO, &wfds);
+			FD_SET(STDOUT_FILENO, &efds);
+			if (STDOUT_FILENO + 1 > nfds) {
+				nfds = STDOUT_FILENO + 1;
+			}
+		}
+
+		if (nfds == 0) {
+			break;
+		}
+
+		if (select(nfds, &rfds, &wfds, &efds, NULL) == -1) {
+			if (errno == EINTR) {
+				continue;
+			}
+			PERROR("select");
+			err = 1;
+			goto cleanup;
+		}
+
+		if (FD_ISSET(STDIN_FILENO, &efds)) {
+			LOG("select error for stdin\n");
+			err = 1;
+			goto cleanup;
+		}
+
+		if (FD_ISSET(STDOUT_FILENO, &efds)) {
+			LOG("select error for stdout\n");
+			err = 1;
+			goto cleanup;
+		}
+
+		if (FD_ISSET(*master, &efds)) {
+			LOG("select error for pseudoterminal master\n");
+			err = 1;
+			goto cleanup;
+		}
+
+		if (in_open && in_len == 0 && FD_ISSET(STDIN_FILENO, &rfds)) {
+			/* get new data */
+			in_len = (int)read(STDIN_FILENO, in_buf, 1024);
+			if (in_len == -1) {
+				if (errno != EINTR) {
+					PERROR("read from stdin");
+					err = 1;
+					goto cleanup;
+				}
+			} else if (in_len == 0) {	/* EOF */
+				in_open = 0;
+			}
+		}
+		if (in_len && FD_ISSET(*master, &wfds)) {	/* flush buffer */
+			n = write(*master, &in_buf[in_i], in_len - in_i);
+			if (n == -1) {
+				if (errno == EIO) {
+					in_open = in_len = 0;
+				} else if (errno != EINTR) {
+					PERROR
+					    ("write to pseudoterminal master");
+					err = 1;
+					goto cleanup;
+				}
+			} else if (n == 0) {
+				PERROR("write zero to master");
+				err = 1;
+				goto cleanup;
+			} else {
+				in_i += n;
+				if (in_i == in_len) {
+					in_i = in_len = 0;
+				}
+			}
+		}
+		if (out_open && out_len == 0 && FD_ISSET(*master, &rfds)) {
+			/* get new data */
+			out_len = (int)read(*master, out_buf, 1024);
+			if (out_len == -1) {
+				if (errno == EIO) {
+					out_open = out_len = 0;
+				} else if (errno != EINTR) {
+					PERROR
+					    ("read from pseudoterminal master");
+					err = 1;
+					goto cleanup;
+				}
+			} else if (out_len == 0) {	/* EOF */
+				out_open = 0;
+			}
+		}
+		if (out_len && FD_ISSET(STDOUT_FILENO, &wfds)) {	/* flush buffer */
+			n = write(STDOUT_FILENO, &out_buf[out_i],
+				  out_len - out_i);
+			if (n == -1) {
+				if (errno != EINTR) {
+					PERROR("write to stdout");
+					err = 1;
+					goto cleanup;
+				}
+			} else if (n == 0) {
+				PERROR("write zero to stdout");
+				err = 1;
+				goto cleanup;
+			} else {
+				out_i += n;
+				if (out_i == out_len) {
+					out_i = out_len = 0;
+				}
+			}
+		}
+	}
+
+ cleanup:
+	if (*master >= 0) {
+		if (close(*master)) {
+			PERROR("close pseudoterminal master");
+		}
+		*master = -1;
 	}
 
 	return err;
