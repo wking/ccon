@@ -1797,7 +1797,7 @@ static int _wait(pid_t pid, const char *name)
 			if (errno == EINTR) {
 				continue;
 			}
-			PERROR("waitid-x");
+			PERROR("waitid");
 			return 1;
 		}
 		break;
