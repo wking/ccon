@@ -33,9 +33,11 @@ digit.  The first digit classifies the test:
   [`head`][head.1], [`id`][id.1], and [`pwd`][pwd.1].
 * [Grep][] for [`grep`][grep.1].
 * [Sed][] for [`sed`][sed.1].
+* [libcap-ng][] for [`captest`][captest.8].
 
 [coreutils]: http://www.gnu.org/software/coreutils/coreutils.html
 [Grep]: https://www.gnu.org/software/grep/
+[libcap-ng]: http://people.redhat.com/sgrubb/libcap-ng/
 [prove]: http://perldoc.perl.org/prove.html
 [sed]: http://sed.sourceforge.net/
 [Sharness]: http://mlafeldt.github.io/sharness/
@@ -49,3 +51,4 @@ digit.  The first digit classifies the test:
 [pwd.1]: http://pubs.opengroup.org/onlinepubs/9699919799/utilities/pwd.html
 [sed.1]: http://pubs.opengroup.org/onlinepubs/9699919799/utilities/sed.html
 [sh.1]: http://pubs.opengroup.org/onlinepubs/9699919799/utilities/sh.html
+[captest.8]: https://fedorahosted.org/libcap-ng/browser/trunk/utils/captest.8
