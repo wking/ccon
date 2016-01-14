@@ -30,7 +30,8 @@ digit.  The first digit classifies the test:
 
 * A [POSIX shell][sh.1] for `sh`.
 * [GNU Core Utilities][coreutils] for [`cat`][cat.1], [`echo`][echo.1],
-  [`head`][head.1], [`id`][id.1], and [`pwd`][pwd.1].
+  [`head`][head.1], [`id`][id.1], [`pwd`][pwd.1], [`test`][test.1],
+  and [`tty`][tty.1].
 * [Grep][] for [`grep`][grep.1].
 * [Sed][] for [`sed`][sed.1].
 * [libcap-ng][] for [`captest`][captest.8].
@@ -51,4 +52,6 @@ digit.  The first digit classifies the test:
 [pwd.1]: http://pubs.opengroup.org/onlinepubs/9699919799/utilities/pwd.html
 [sed.1]: http://pubs.opengroup.org/onlinepubs/9699919799/utilities/sed.html
 [sh.1]: http://pubs.opengroup.org/onlinepubs/9699919799/utilities/sh.html
+[test.1]: http://pubs.opengroup.org/onlinepubs/9699919799/utilities/test.html
+[tty.1]: http://pubs.opengroup.org/onlinepubs/9699919799/utilities/tty.html
 [captest.8]: https://fedorahosted.org/libcap-ng/browser/trunk/utils/captest.8
