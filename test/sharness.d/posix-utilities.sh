@@ -20,6 +20,7 @@ command -v head >/dev/null 2>/dev/null && test_set_prereq HEAD
 command -v id >/dev/null 2>/dev/null && test_set_prereq ID
 command -v pwd >/dev/null 2>/dev/null && test_set_prereq PWD
 command -v sed >/dev/null 2>/dev/null && test_set_prereq SED
+command -v sh >/dev/null 2>/dev/null && test_set_prereq SHELL
 command -v test >/dev/null 2>/dev/null && test_set_prereq TEST
 command -v tty >/dev/null 2>/dev/null && test_set_prereq TTY
 
