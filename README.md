@@ -150,7 +150,7 @@ process will join an existing namespace at the absolute path specified
 by the **`path`** value.  The absence of a **`path`** key means a new
 namespace will be created.  For new namespaces, there may be
 per-namespace configuration in the namespace object.  If there is no
-**`namespace`** entry or its value is an empty object, the container
+**`namespaces`** entry or its value is an empty object, the container
 process will inherit all its namespaces from the host process.
 
 * **`namespaces`** (optional, object) containing entries for each new
