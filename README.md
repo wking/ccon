@@ -148,8 +148,8 @@ Keys match the long-form options from [`unshare`][unshare.1] and
 namespace entry, the presence of a **`path`** key means the container
 process will join an existing namespace at the absolute path specified
 by the **`path`** value.  The absence of a **`path`** key means a new
-namespace will be created.  For new namespaces, there may be
-per-namespace configuration in the namespace object.  If there is no
+namespace will be created.  There may be additional per-namespace
+configuration in the namespace object.  If there is no
 **`namespaces`** entry or its value is an empty object, the container
 process will inherit all its namespaces from the host process.
 Similarly, if a particular **`namespaces`** entry is missing
@@ -181,29 +181,25 @@ New [user namespaces][user_namespaces.7] support the
 discussed in [`user_namespaces(7)`][user_namespaces.7].
 
 * **`user`** (optional, object) which may contain:
-  * **`path`** (optional, string, incompatible with other siblings)
-    the absolute path to a network namespace which the container
-    process should join.
-  * **`setgroups`** (optional, boolean, incompatible with a **`path`**
-    sibling) whether to enable or disable [`setgroups`][getgroups.2].
-    Implemented by writing to
+  * **`path`** (optional, string) the absolute path to a network
+    namespace which the container process should join.
+  * **`setgroups`** (optional, boolean) whether to enable or disable
+    [`setgroups`][getgroups.2].  Implemented by writing to
     [`/proc/{pid}/setgroups`][user_namespaces.7].
-  * **`uidMappings`** (optional, array of objects, incompatible with a
-    **`path`** sibling) maps user IDs between the new namespace and
-    its parent namespace.  Implemented by writing to
-    [`/proc/{pid}/uid_map`][user_namespaces.7].  Array entries are
-    objects with the following fields:
+  * **`uidMappings`** (optional, array of objects) maps user IDs
+    between the new namespace and its parent namespace.  Implemented
+    by writing to [`/proc/{pid}/uid_map`][user_namespaces.7].  Array
+    entries are objects with the following fields:
     * **`containerID`** (required, integer) is the start of the mapped
       UID range in the new namespace.
     * **`hostID`** (required, integer) is the start of the mapped UID
       range in the parent namespace.
     * **`size`** (required, integer) is the length of the range of
       mapped UIDs.
-  * **`gidMappings`** (optional, array of objects, incompatible with a
-    **`path`** sibling) maps group IDs between the new namespace and
-    its parent namespace.  Implemented by writing to
-    [`/proc/{pid}/gid_map`][user_namespaces.7].  Array entries are
-    objects with the following fields:
+  * **`gidMappings`** (optional, array of objects) maps group IDs
+    between the new namespace and its parent namespace.  Implemented
+    by writing to [`/proc/{pid}/gid_map`][user_namespaces.7].  Array
+    entries are objects with the following fields:
     * **`containerID`** (required, integer) is the start of the mapped
       GID range in the new namespace.
     * **`hostID`** (required, integer) is the start of the mapped GID
@@ -245,12 +241,11 @@ documentation][user_namespaces.7] outlines the mount permissions for
 processes inside a user namespace.
 
 * **`mount`** (optional, object) which may contain:
-  * **`path`** (optional, string, incompatible with a **`mounts`**
-    sibling) the absolute path to a network namespace which the
-    container process should join.
-  * **`mounts`** (optional, array, incompatible with a **`path`**
-    sibling) an ordered list of mounts to perform.  Array entries are
-    objects with fields based on the [`mount`][mount.2] call:
+  * **`path`** (optional, string) the absolute path to a network
+    namespace which the container process should join.
+  * **`mounts`** (optional, array) an ordered list of mounts to
+    perform.  Array entries are objects with fields based on the
+    [`mount`][mount.2] call:
     * **`type`** (string) of mount (see
       [`filesystems(5)`][filesystems.5]).
     * **`source`** (string) path of mount.  This may be optional or

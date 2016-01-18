@@ -364,7 +364,6 @@ static int validate_config(json_t * config)
 	 * TODO, validate:
 	 * * v0.1.0 spec doesn't contain process.host
 	 * * array values (process.env, hooks.pre-start, ...)
-	 * * incompatibilities (e.g. user.path and user.setgroups)
 	 */
 	return 0;
 }
