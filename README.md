@@ -152,6 +152,9 @@ namespace will be created.  For new namespaces, there may be
 per-namespace configuration in the namespace object.  If there is no
 **`namespaces`** entry or its value is an empty object, the container
 process will inherit all its namespaces from the host process.
+Similarly, if a particular **`namespaces`** entry is missing
+(e.g. [**`user`**](#user-namespace)), the container process will
+inherit that namespace from the host process.
 
 * **`namespaces`** (optional, object) containing entries for each new
   or joined namespace.
