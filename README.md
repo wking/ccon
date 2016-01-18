@@ -68,11 +68,11 @@ setup.  Here's an outline of the lifecycle:
 A number of those steps are optional.  For details, see the relevant
 section in the [configuration specification](#configuration).  In
 general, leaving out a particular value
-(e.g. **`namespaces.user.setgroups`** or **`namespaces.mounts`**) will
-result in that potential action (e.g. writing to
-[`/proc/{pid}/setgroups`][user_namespaces.7] or calling
-[`mount`][mount.2] being skipped, while the rest of ccon carries on as
-usual.
+(e.g. **`namespaces.user.setgroups`** or
+**`namespaces.mount.mounts`**) will result in that potential action
+(e.g. writing to [`/proc/{pid}/setgroups`][user_namespaces.7] or
+calling [`mount`][mount.2]) being skipped, while the rest of ccon
+carries on as usual.
 
 Users who need to join namespaces *before* unsharing namespaces can
 use [`nsenter`][nsenter.1] or a wrapping ccon invocation to join those
