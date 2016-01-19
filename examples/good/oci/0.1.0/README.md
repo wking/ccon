@@ -14,7 +14,7 @@ Some functionality requires additional tools in the host `PATH`:
 
 and launch the container:
 
-    $ ccon-oci start
+    $ echo 'echo hi; exit' | ccon-oci start
 
 which will translate the OCI v0.1.0 config to a ccon config and
 execute `ccon` with the ccon config.

@@ -185,7 +185,7 @@ def convert_config(basedir, config, runtime, state):
         raise NotImplementedError(
             'unsupported OCI-spec version: {}'.format(version))
     c = {
-        'version': '0.1.0',
+        'version': '0.3.0',
     }
     config.pop('platform', None)  # nothing interesting in here
     namespaces = {
@@ -223,8 +223,7 @@ def convert_config(basedir, config, runtime, state):
     process = config.pop('process', None)
     if process:
         c['process'] = {}
-        process.pop('terminal', None)  # nothing interesting in here
-        for field in ['args', 'cwd', 'env', 'user']:
+        for field in ['args', 'cwd', 'env', 'terminal', 'user']:
             if field in process:
                 c['process'][field] = process.pop(field)
         user = c['process'].get('user', None)
