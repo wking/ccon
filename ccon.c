@@ -102,7 +102,7 @@ static int get_namespace_fds(json_t * config, namespace_fd_t ** namespace_fds);
 static int run_hooks(json_t * config, const char *name, pid_t cpid);
 static int get_namespace_type(const char *name, int *nstype);
 static int get_clone_flags(json_t * config, int *flags);
-static int join_namespaces(json_t * config, namespace_fd_t ** namespaces_fds);
+static int join_namespaces(json_t * config, namespace_fd_t ** namespace_fds);
 static int set_user_namespace_mappings(json_t * config, pid_t cpid);
 static int set_user_map(json_t * user, pid_t cpid, const char *key,
 			const char *filename);
