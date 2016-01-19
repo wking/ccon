@@ -104,6 +104,8 @@ static int run_hooks(json_t * config, const char *name, pid_t cpid);
 static int get_namespace_type(const char *name, int *nstype);
 static int get_clone_flags(json_t * config, int *flags);
 static int join_namespaces(json_t * config, namespace_fd_t ** namespace_fds);
+static int join_namespace(const char *name, json_t * namespace,
+			  namespace_fd_t ** namespace_fds);
 static int set_user_namespace_mappings(json_t * config, pid_t cpid);
 static int set_user_map(json_t * user, pid_t cpid, const char *key,
 			const char *filename);
@@ -1223,44 +1225,66 @@ static int get_clone_flags(json_t * config, int *flags)
 
 static int join_namespaces(json_t * config, namespace_fd_t ** namespace_fds)
 {
-	json_t *namespaces, *value, *path;
+	json_t *namespaces, *value;
 	const char *key;
-	int nstype, i;
 
 	namespaces = json_object_get(config, "namespaces");
 	if (!namespaces) {
 		return 0;
 	}
 
-	json_object_foreach(namespaces, key, value) {
-		path = json_object_get(value, "path");
-		if (!path) {
-			continue;
-		}
-		if (get_namespace_type(key, &nstype)) {
+	value = json_object_get(namespaces, "user");
+	if (value) {
+		if (join_namespace("user", value, namespace_fds)) {
 			return 1;
 		}
-		for (i = 0;
-		     (*namespace_fds)[i].type != nstype
-		     && (*namespace_fds)[i].type > 0; i++) {
-			;
-		}
-		if ((*namespace_fds)[i].type != nstype) {
-			LOG("no namespace file descriptor found for %s", key);
-			return 1;
-		}
-		LOG("join %s namespace\n", key);
-		if (setns((*namespace_fds)[i].fd, nstype) == -1) {
-			PERROR("setns");
-			return 1;
-		}
-		if (close((*namespace_fds)[i].fd) == -1) {
-			PERROR("close");
-			(*namespace_fds)[i].fd = -1;
-			return 1;
-		}
-		(*namespace_fds)[i].fd = -1;
 	}
+
+	json_object_foreach(namespaces, key, value) {
+		if (strncmp("user", key, strlen("user") + 1) == 0) {
+			continue;	/* already handled */
+		}
+		if (join_namespace(key, value, namespace_fds)) {
+			return 1;
+		}
+	}
+
+	return 0;
+}
+
+static int join_namespace(const char *name, json_t * namespace,
+			  namespace_fd_t ** namespace_fds)
+{
+	json_t *path;
+	int nstype, i;
+
+	path = json_object_get(namespace, "path");
+	if (!path) {
+		return 0;
+	}
+	if (get_namespace_type(name, &nstype)) {
+		return 1;
+	}
+	for (i = 0;
+	     (*namespace_fds)[i].type != nstype && (*namespace_fds)[i].type > 0;
+	     i++) {
+		;
+	}
+	if ((*namespace_fds)[i].type != nstype) {
+		LOG("no namespace file descriptor found for %s", name);
+		return 1;
+	}
+	LOG("join %s namespace\n", name);
+	if (setns((*namespace_fds)[i].fd, nstype) == -1) {
+		PERROR("setns");
+		return 1;
+	}
+	if (close((*namespace_fds)[i].fd) == -1) {
+		PERROR("close");
+		(*namespace_fds)[i].fd = -1;
+		return 1;
+	}
+	(*namespace_fds)[i].fd = -1;
 
 	return 0;
 }
