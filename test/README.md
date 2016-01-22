@@ -34,8 +34,10 @@ digit.  The first digit classifies the test:
   and [`tty`][tty.1].
 * [Grep][] for [`grep`][grep.1].
 * [Sed][] for [`sed`][sed.1].
+* [BusyBox][] for `busybox`.
 * [libcap-ng][] for [`captest`][captest.8].
 
+[BusyBox]: http://www.busybox.net/
 [coreutils]: http://www.gnu.org/software/coreutils/coreutils.html
 [Grep]: https://www.gnu.org/software/grep/
 [libcap-ng]: http://people.redhat.com/sgrubb/libcap-ng/
