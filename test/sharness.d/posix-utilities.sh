@@ -15,6 +15,7 @@
 
 command -v cat >/dev/null 2>/dev/null && test_set_prereq CAT
 command -v echo >/dev/null 2>/dev/null && test_set_prereq ECHO
+command -v env >/dev/null 2>/dev/null && test_set_prereq ENV
 command -v grep >/dev/null 2>/dev/null && test_set_prereq GREP
 command -v head >/dev/null 2>/dev/null && test_set_prereq HEAD
 command -v id >/dev/null 2>/dev/null && test_set_prereq ID

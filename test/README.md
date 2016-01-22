@@ -30,8 +30,8 @@ digit.  The first digit classifies the test:
 
 * A [POSIX shell][sh.1] for `sh`.
 * [GNU Core Utilities][coreutils] for [`cat`][cat.1], [`echo`][echo.1],
-  [`head`][head.1], [`id`][id.1], [`pwd`][pwd.1], [`test`][test.1],
-  and [`tty`][tty.1].
+  [`env`][env.1], [`head`][head.1], [`id`][id.1], [`pwd`][pwd.1],
+  [`test`][test.1] and [`tty`][tty.1].
 * [Grep][] for [`grep`][grep.1].
 * [Sed][] for [`sed`][sed.1].
 * [BusyBox][] for `busybox`.
@@ -48,6 +48,7 @@ digit.  The first digit classifies the test:
 
 [cat.1]: http://pubs.opengroup.org/onlinepubs/9699919799/utilities/cat.html
 [echo.1]: http://pubs.opengroup.org/onlinepubs/9699919799/utilities/echo.html
+[env.1]: http://pubs.opengroup.org/onlinepubs/9699919799/utilities/env.html
 [grep.1]: http://pubs.opengroup.org/onlinepubs/9699919799/utilities/grep.html
 [head.1]: http://pubs.opengroup.org/onlinepubs/9699919799/utilities/head.html
 [id.1]: http://pubs.opengroup.org/onlinepubs/9699919799/utilities/id.html
