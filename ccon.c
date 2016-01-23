@@ -1147,7 +1147,7 @@ static int run_hooks(json_t * config, const char *name, pid_t cpid)
 					return 1;
 				}
 				if (close(pipe_fd[0])) {
-					perror
+					PERROR
 					    ("close host-to-hook pipe read-end after stdin dup");
 					return 1;
 				}
