@@ -26,6 +26,8 @@ digit.  The first digit classifies the test:
 
 1 - Process-configuration compliance.
 
+2 - Namespace-configuration compliance.
+
 ## Dependencies
 
 * A [POSIX shell][sh.1] for `sh`.
