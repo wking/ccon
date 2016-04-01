@@ -790,6 +790,6 @@ be distributed under the GPLv3+.
 [user_namespaces.7]: http://man7.org/linux/man-pages/man7/user_namespaces.7.html
 [switch_root.8.notes]: http://man7.org/linux/man-pages/man8/switch_root.8.html#NOTES
 
-[cgroups]: https://www.kernel.org/doc/Documentation/cgroups/cgroups.txt
-[cgroups-unified]: https://www.kernel.org/doc/Documentation/cgroups/unified-hierarchy.txt
+[cgroups]: https://www.kernel.org/doc/Documentation/cgroup-v1/cgroups.txt
+[cgroups-unified]: https://www.kernel.org/doc/Documentation/cgroup-v2.txt
 [sd_listen_fds]: http://www.freedesktop.org/software/systemd/man/sd_listen_fds.html

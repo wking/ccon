@@ -55,7 +55,7 @@ namespace][1b852bce-thread], 2015-05-09).
 10. [`/tmp`][tmp] for compliance with the [FHS 3.0][FHS-3.0].
 
 [BusyBox]: http://www.busybox.net/
-[cgroups]: https://www.kernel.org/doc/Documentation/cgroups/cgroups.txt
+[cgroups]: https://www.kernel.org/doc/Documentation/cgroup-v1/cgroups.txt
 [dev]: http://refspecs.linuxfoundation.org/FHS_3.0/fhs/ch03s06.html
 [devtmpfs]: http://thread.gmane.org/gmane.linux.kernel/830032
 [FHS-3.0]: http://refspecs.linuxfoundation.org/FHS_3.0/fhs/index.html

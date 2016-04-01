@@ -66,8 +66,8 @@ create such a subgroup.
 [procps]: https://gitlab.com/procps-ng/procps
 [util-linux]: https://www.kernel.org/pub/linux/utils/util-linux/
 
-[cgroups]: https://www.kernel.org/doc/Documentation/cgroups/cgroups.txt
-[freezer]: https://www.kernel.org/doc/Documentation/cgroups/freezer-subsystem.txt
+[cgroups]: https://www.kernel.org/doc/Documentation/cgroup-v1/cgroups.txt
+[freezer]: https://www.kernel.org/doc/Documentation/cgroup-v1/freezer-subsystem.txt
 
 [cat.1]: http://man7.org/linux/man-pages/man1/cat.1.html
 [chmod.1]: http://man7.org/linux/man-pages/man1/chmod.1.html
