@@ -15,60 +15,53 @@
 # You should have received a copy of the GNU General Public License
 # along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
-test_description='Test process host'
+test_description='Test mount namespaces'
 
 . ./sharness.sh
 
-test_expect_success BUSYBOX,CAT,GREP,ID 'Test process.host unset' "
-	test_expect_code 1 ccon --verbose --config-string '{
-		  \"version\": \"0.2.0\",
+test_expect_success READLINK 'Test mount namespace creation' "
+	ccon --config-string '{
+		  \"version\": \"0.1.0\",
 		  \"namespaces\": {
-		    \"user\": {
-		      \"setgroups\": false,
-		      \"uidMappings\": [
-		        {
-		          \"containerID\": 0,
-		          \"hostID\": $(id -u),
-		          \"size\": 1
-		        }
-		      ],
-		      \"gidMappings\": [
-		        {
-		          \"containerID\": 0,
-		          \"hostID\": $(id -u),
-		          \"size\": 1
-		        }
-		      ]
-		    },
+		    \"user\": {},
+		    \"mount\": {}
+		  },
+		  \"process\": {
+		    \"args\": [\"readlink\", \"/proc/self/ns/mnt\"]
+		  }
+		}' >container &&
+	readlink /proc/self/ns/mnt >host &&
+	test_must_fail test_cmp host container
+"
+
+test_expect_success TOUCH 'Test mount namespace read-only mount' "
+	test_expect_code 1 ccon --config-string '{
+		  \"version\": \"0.1.0\",
+		  \"namespaces\": {
+		    \"user\": {},
 		    \"mount\": {
 		      \"mounts\": [
 		        {
-		          \"source\": \".\",
-		          \"target\": \".\",
+		          \"target\": \"/\",
 		          \"flags\": [
-		            \"MS_BIND\"
+		            \"MS_REMOUNT\",
+		            \"MS_BIND\",
+		            \"MS_RDONLY\"
 		          ]
-		        },
-		        {
-		          \"source\": \".\",
-		          \"type\": \"pivot-root\"
 		        }
 		      ]
 		    }
 		  },
 		  \"process\": {
-		    \"args\": [\"busybox\", \"echo\", \"hello\"]
+		    \"args\": [\"touch\", \"/mount-test\"]
 		  }
 		}' 2>actual &&
-	grep -B1 'execvpe' actual >actual-exec &&
-	cat <<-EOF >expected-exec &&
-		execute: busybox echo hello
-		execvpe: No such file or directory
-	EOF
-	test_cmp expected-exec actual-exec
+	echo \"touch: cannot touch '/mount-test': Read-only file system\" >expected &&
+	test_cmp expected actual
 "
 
-test_expect_success BUSYBOX,ECHO,ID 'Test process.host' "
+test_expect_success BUSYBOX,ID 'Test mount namespace pivot root' "
+	mkdir -p rootfs &&
 	ccon --config-string '{
 		  \"version\": \"0.2.0\",
 		  \"namespaces\": {
@@ -92,25 +85,28 @@ test_expect_success BUSYBOX,ECHO,ID 'Test process.host' "
 		    \"mount\": {
 		      \"mounts\": [
 		        {
-		          \"source\": \".\",
-		          \"target\": \".\",
+		          \"source\": \"rootfs\",
+		          \"target\": \"rootfs\",
 		          \"flags\": [
 		            \"MS_BIND\"
 		          ]
 		        },
 		        {
-		          \"source\": \".\",
+		          \"source\": \"rootfs\",
 		          \"type\": \"pivot-root\"
 		        }
 		      ]
 		    }
 		  },
 		  \"process\": {
-		    \"host\": true,
-		    \"args\": [\"busybox\", \"echo\", \"hello\"]
+		    \"args\": [\"/bin/busybox\", \"ls\", \"-a\", \"/\"],
+		    \"host\": true
 		  }
 		}' >actual &&
-	echo 'hello' >expected &&
+	cat <<-EOF >expected &&
+		.
+		..
+	EOF
 	test_cmp expected actual
 "
 
