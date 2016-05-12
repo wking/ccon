@@ -89,8 +89,9 @@ Linux.  For example, setting per-container mounts requires a mount
 namespace, so ccon's mount listing falls under
 **`namespaces.mount.mounts`**.  There's an example in
 [`config.json`](config.json) that unprivileged users should be able to
-launch an interactive [BusyBox][] shell in new namespaces (you may
-need to adjust the **`hostID`** entries to match `id -u` and `id -g`).
+use to launch an interactive [BusyBox][] shell in new namespaces (you
+may need to adjust the **`hostID`** entries to match `id -u` and `id
+-g`).
 
 If you want to use ccon to launch OCI bundles, you can use the
 [ccon-oci](ccon-oci) wrapper ([example](examples/good/oci/0.1.0)),
