@@ -542,10 +542,11 @@ static int handle_parent(json_t * config, pid_t cpid, int *socket)
 	struct msghdr msg = { NULL, 0, &iov, 1, NULL, 0, 0 };
 	size_t len;
 	ssize_t n;
-	int err = 0;
+	int err = 0, exit = 0;
 
 	if (set_user_namespace_mappings(config, cpid)) {
-		return 1;
+		err = 1;
+		goto wait;
 	}
 
 	iov.iov_base = (void *)USER_NAMESPACE_MAPPING_COMPLETE;
@@ -553,11 +554,13 @@ static int handle_parent(json_t * config, pid_t cpid, int *socket)
 	n = sendmsg(*socket, &msg, 0);
 	if (n == -1) {
 		PERROR("sendmsg");
-		return 1;
+		err = 1;
+		goto wait;
 	} else if (n != iov.iov_len) {
 		LOG("did not send the expected number of bytes: %d != %d\n",
 		    (int)n, (int)iov.iov_len);
-		return 1;
+		err = 1;
+		goto wait;
 	}
 
 	iov.iov_base = (void *)buf;
@@ -565,24 +568,20 @@ static int handle_parent(json_t * config, pid_t cpid, int *socket)
 	n = recvmsg(*socket, &msg, 0);
 	if (n == -1) {
 		PERROR("recvmsg");
-		return 1;
+		err = 1;
+		goto wait;
 	}
 	len = strlen(CONTAINER_SETUP_COMPLETE);
 	if (len != n ||
 	    strncmp(CONTAINER_SETUP_COMPLETE, iov.iov_base, len) != 0) {
 		LOG("unexpected message from container (%d): %.*s\n", (int)n,
 		    (int)n, (char *)iov.iov_base);
-		return 1;
+		err = 1;
+		goto wait;
 	}
 
 	if (run_hooks(config, "pre-start", cpid)) {
 		err = 1;
-		if (child_pid > 0) {
-			LOG("SIGKILL the container process\n");
-			if (kill(cpid, SIGKILL)) {
-				PERROR("kill");
-			}
-		}
 		goto wait;
 	}
 
@@ -591,26 +590,36 @@ static int handle_parent(json_t * config, pid_t cpid, int *socket)
 	n = sendmsg(*socket, &msg, 0);
 	if (n == -1) {
 		PERROR("sendmsg");
-		return 1;
+		err = 1;
+		goto wait;
 	} else if (n != iov.iov_len) {
 		LOG("did not send the expected number of bytes: %d != %d\n",
 		    (int)n, (int)iov.iov_len);
-		return 1;
+		err = 1;
+		goto wait;
 	}
 
  wait:
+	if (err) {
+		kill_child(0, NULL, NULL);
+	}
+
 	if (close(*socket) == -1) {
 		PERROR("close host-side socket");
+		err = 1;
 		*socket = -1;
-		return 1;
+		kill_child(0, NULL, NULL);
 	}
 	*socket = -1;
 
-	err = _wait(cpid, "container");
+	exit = _wait(cpid, "container");
 
 	(void)run_hooks(config, "post-stop", 0);
 
-	return err;
+	if (err) {
+		return err;
+	}
+	return exit;
 }
 
 static int child_func(void *arg)
