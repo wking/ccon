@@ -11,6 +11,10 @@ less opinionated than [LXC][lxc.container.conf.5]).
 ## Table of contents
 
 * [Lifecycle](#lifecycle)
+* [Socket communication](#socket-communication)
+  * [Getting the container process's
+    PID](#getting-the-container-processs-pid)
+  * [Start request](#start-request)
 * [Configuration](#configuration)
   * [Version](#version)
   * [Namespaces](#namespaces)
@@ -59,8 +63,11 @@ synchronize the container setup.  Here's an outline of the lifecycle:
 |                                  | mounts filesystems            |
 |                                  | ← sends namespaces-complete   |
 | runs pre-start hooks             | blocks on exec-message        |
-| sends exec-message →             |                               |
-|                                  | opens the local ptmx          |
+| binds to socket path             |                               |
+| sends connection socket →        |                               |
+| blocks on exec-process message   | listens for process JSON      |
+|                                  | ← sends exec-process message  |
+| removes socket path              | opens the local ptmx          |
 |                                  | ← sends pseudoterminal master |
 |                                  | bind mounts `/dev/console`    |
 |                                  | ← sends pseudoterminal slave  |
@@ -85,6 +92,77 @@ Users who need to join namespaces *before* unsharing namespaces can
 use [`nsenter`][nsenter.1] or a wrapping ccon invocation to join those
 namespaces before the main ccon invocation creates the new mount
 namespace.
+
+## Socket communication
+
+With `--socket=PATH`, ccon will bind a [`SOCK_SEQPACKET` Unix
+socket][unix.7] to `PATH`.  This path is created after namespace-setup
+completes, so users can use its presence as a trigger for further
+configuration (e.g. network setup) before [starting](#start-request)
+the [user-specified code](#process).  The path is removed after a
+[start request](#start-request) is received or after the container
+process exits, whichever comes first.
+
+The [`ccon-cli`](ccon-cli.c) program distributed with this repository
+is one client for the ccon socket.
+
+### Getting the container process's PID
+
+An [`SO_PEERCRED`][socket.7] request will return the container
+process's PID [in the receiving process's PID
+namespace][pid_namespaces.7].  The client can use this to look up the
+container process in their local [`/proc`][proc.5].  This request may
+be performed as many times as you like.
+
+### Start request
+
+The request is a single [`struct iovec`][recv.2] containing either a
+leading null byte or process JSON.  Sending a single null-byte message
+will trigger the [**`process`**](#process) field present in the
+original configuration, while non-empty strings will completely
+override that field.
+
+The response is a single [`struct iovec`][recv.2] containing either a
+single null-byte message (for success) or an error message encoded in
+[ASCII][ascii.7] ([RFC 1345][rfc1345.s5]).  In this context, “success”
+means “successfully received the start request”, because the container
+process sends the response before actually executing the
+[user-specified code](#process).
+
+If you set [**`host`**](#host) in your process JSON, `ccon-cli` will
+open the referenced path and pass the open file descriptor to the
+container over the Unix socket.
+
+### Example
+
+In one shell, launch ccon and have it listen on a socket at
+`/tmp/ccon-sock`:
+
+```
+$ ccon --socket /tmp/ccon-sock
+```
+
+In a second shell, get the container process's PID, but don't trigger
+the user-specified code:
+
+```
+$ PID=$(ccon-cli --socket /tmp/ccon-sock --pid)
+$ echo "${PID}"
+2186
+```
+
+You can then perform additional configuration using that PID:
+
+```
+$ ip link set ccon-ex-veth1 netns "${PID}"
+```
+
+And when you're finished setting up the environment, you can trigger
+the [user-specified code](#process):
+
+```
+$ ccon-cli  --socket /tmp/ccon-sock --config-string '{"args": ["busybox", "sh"]}'
+```
 
 ## Configuration
 
@@ -858,6 +936,7 @@ be distributed under the GPLv3+.
 [setgid.2]: http://man7.org/linux/man-pages/man2/setgid.2.html
 [setuid.2]: http://man7.org/linux/man-pages/man2/setuid.2.html
 [syscall.2]: http://man7.org/linux/man-pages/man2/syscall.2.html
+[recv.2]: http://man7.org/linux/man-pages/man2/recv.2.html
 [environ.3p]: https://www.kernel.org/pub/linux/docs/man-pages/man-pages-posix/
 [exec.3]: http://man7.org/linux/man-pages/man3/exec.3.html
 [getcwd.3]: http://man7.org/linux/man-pages/man3/getcwd.3.html
@@ -868,11 +947,14 @@ be distributed under the GPLv3+.
 [pts.4]: http://man7.org/linux/man-pages/man4/pty.4.html
 [filesystems.5]: http://man7.org/linux/man-pages/man5/filesystems.5.html
 [lxc.container.conf.5]: https://linuxcontainers.org/lxc/manpages/man5/lxc.container.conf.5.html
+[proc.5]: https://linuxcontainers.org/lxc/manpages/man5/proc.5.html
+[ascii.7]: http://man7.org/linux/man-pages/man7/ascii.7.html
 [capabilities.7]: http://man7.org/linux/man-pages/man7/capabilities.7.html
 [namespaces.7]: http://man7.org/linux/man-pages/man7/namespaces.7.html
 [pid_namespaces.7]: http://man7.org/linux/man-pages/man7/pid_namespaces.7.html
 [pty.7]: http://man7.org/linux/man-pages/man7/pty.7.html
 [signal.7]: http://man7.org/linux/man-pages/man7/signal.7.html
+[socket.7]: http://man7.org/linux/man-pages/man7/socket.7.html
 [unix.7]: http://man7.org/linux/man-pages/man7/unix.7.html
 [user_namespaces.7]: http://man7.org/linux/man-pages/man7/user_namespaces.7.html
 [mount.8]: http://man7.org/linux/man-pages/man8/pty.8.html
@@ -881,4 +963,5 @@ be distributed under the GPLv3+.
 [cgroups]: https://www.kernel.org/doc/Documentation/cgroup-v1/cgroups.txt
 [cgroups-unified]: https://www.kernel.org/doc/Documentation/cgroup-v2.txt
 [devpts]: https://www.kernel.org/doc/Documentation/filesystems/devpts.txt
+[rfc1345.s5]: https://tools.ietf.org/html/rfc1345#section-5
 [sd_listen_fds]: http://www.freedesktop.org/software/systemd/man/sd_listen_fds.html

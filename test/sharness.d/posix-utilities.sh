@@ -23,8 +23,10 @@ command -v printf >/dev/null 2>/dev/null && test_set_prereq PRINTF
 command -v pwd >/dev/null 2>/dev/null && test_set_prereq PWD
 command -v sed >/dev/null 2>/dev/null && test_set_prereq SED
 command -v sh >/dev/null 2>/dev/null && test_set_prereq SHELL
+command -v sleep >/dev/null 2>/dev/null && test_set_prereq SLEEP
 command -v test >/dev/null 2>/dev/null && test_set_prereq TEST
 command -v touch >/dev/null 2>/dev/null && test_set_prereq TOUCH
 command -v tty >/dev/null 2>/dev/null && test_set_prereq TTY
+command -v wait >/dev/null 2>/dev/null && test_set_prereq WAIT
 
 true
