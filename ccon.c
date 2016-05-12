@@ -716,7 +716,7 @@ static int handle_child(json_t * config, int *to_parent, int *from_parent,
 	if (strncmp
 	    (USER_NAMESPACE_MAPPING_COMPLETE, line,
 	     strlen(USER_NAMESPACE_MAPPING_COMPLETE)) != 0) {
-		LOG("unexpected message from container(%d): %.*s\n", (int)len,
+		LOG("unexpected message from host(%d): %.*s\n", (int)len,
 		    (int)len - 1, line);
 		goto cleanup;
 	}
