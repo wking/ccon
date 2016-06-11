@@ -38,11 +38,13 @@ digit.  The first digit classifies the test:
 * [Grep][] for [`grep`][grep.1].
 * [Sed][] for [`sed`][sed.1].
 * [BusyBox][] for `busybox`.
+* [iproute2][] for [`ip`][ip.8].
 * [libcap-ng][] for [`captest`][captest.8].
 
 [BusyBox]: http://www.busybox.net/
 [coreutils]: http://www.gnu.org/software/coreutils/coreutils.html
 [Grep]: https://www.gnu.org/software/grep/
+[iproute2]: http://www.linuxfoundation.org/collaborate/workgroups/networking/iproute2
 [libcap-ng]: http://people.redhat.com/sgrubb/libcap-ng/
 [prove]: http://perldoc.perl.org/prove.html
 [sed]: http://sed.sourceforge.net/
@@ -63,3 +65,4 @@ digit.  The first digit classifies the test:
 [touch.1]: http://pubs.opengroup.org/onlinepubs/9699919799/utilities/touch.html
 [tty.1]: http://pubs.opengroup.org/onlinepubs/9699919799/utilities/tty.html
 [captest.8]: https://fedorahosted.org/libcap-ng/browser/trunk/utils/captest.8
+[ip.8]: https://git.kernel.org/cgit/linux/kernel/git/shemminger/iproute2.git/tree/man/man8/ip.8?id=v4.2.0
