@@ -324,7 +324,6 @@ entries along the lines of:
 ```json
 {
   "target": "/proc",
-  "type": "proc",
   "flags": [
     "MS_PRIVATE",
     "MS_REC"
