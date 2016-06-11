@@ -28,7 +28,7 @@ test_expect_success ECHO,HEAD 'Test --help' '
 
 test_expect_success ECHO 'Test --version' '
 	ccon --version >actual &&
-	echo "ccon 0.3.0" >expected &&
+	echo "ccon 0.4.0" >expected &&
 	test_cmp expected actual
 '
 

@@ -21,7 +21,7 @@ test_description='Test process terminal'
 
 test_expect_success TTY 'Test process.terminal unset' "
 	test_expect_code 1 ccon --config-string '{
-		  \"version\": \"0.3.0\",
+		  \"version\": \"0.4.0\",
 		  \"process\": {
 		    \"args\": [\"tty\"]
 		  }
@@ -32,7 +32,7 @@ test_expect_success TTY 'Test process.terminal unset' "
 
 test_expect_success ECHO,SED,TTY 'Test process.terminal' "
 	ccon --config-string '{
-		  \"version\": \"0.3.0\",
+		  \"version\": \"0.4.0\",
 		  \"process\": {
 		    \"terminal\": true,
 		    \"args\": [\"tty\"]
@@ -45,7 +45,7 @@ test_expect_success ECHO,SED,TTY 'Test process.terminal' "
 
 test_expect_success TTY 'Test pre-start hook terminal unset' "
 	test_expect_code 1 ccon --config-string '{
-		  \"version\": \"0.3.0\",
+		  \"version\": \"0.4.0\",
 		  \"hooks\": {
 		    \"pre-start\": [
 		      {
@@ -60,7 +60,7 @@ test_expect_success TTY 'Test pre-start hook terminal unset' "
 
 test_expect_success SED,TTY 'Test pre-start hook terminal stdin not a TTY' "
 	test_expect_code 1 ccon --config-string '{
-		  \"version\": \"0.3.0\",
+		  \"version\": \"0.4.0\",
 		  \"hooks\": {
 		    \"pre-start\": [
 		      {
@@ -77,7 +77,7 @@ test_expect_success SED,TTY 'Test pre-start hook terminal stdin not a TTY' "
 
 test_expect_success CAT,GREP,SED 'Test pre-start hook terminal stdin has container PID' "
 	ccon --verbose --config-string '{
-		  \"version\": \"0.3.0\",
+		  \"version\": \"0.4.0\",
 		  \"hooks\": {
 		    \"pre-start\": [
 		      {
@@ -99,7 +99,7 @@ test_expect_success CAT,GREP,SED 'Test pre-start hook terminal stdin has contain
 
 test_expect_success TEST 'Test pre-start hook terminal stdout' "
 	ccon --config-string '{
-		  \"version\": \"0.3.0\",
+		  \"version\": \"0.4.0\",
 		  \"hooks\": {
 		    \"pre-start\": [
 		      {
@@ -113,7 +113,7 @@ test_expect_success TEST 'Test pre-start hook terminal stdout' "
 
 test_expect_success TTY 'Test post-stop hook terminal unset' "
 	ccon --config-string '{
-		  \"version\": \"0.3.0\",
+		  \"version\": \"0.4.0\",
 		  \"hooks\": {
 		    \"post-stop\": [
 		      {
@@ -128,7 +128,7 @@ test_expect_success TTY 'Test post-stop hook terminal unset' "
 
 test_expect_success ECHO,SED,TTY 'Test post-stop hook terminal' "
 	ccon --config-string '{
-		  \"version\": \"0.3.0\",
+		  \"version\": \"0.4.0\",
 		  \"hooks\": {
 		    \"post-stop\": [
 		      {

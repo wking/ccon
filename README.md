@@ -119,7 +119,7 @@ or (using [Bash][bash]'s [process
 substitution][bash-process-substitution]):
 
 ```
-$ ccon --config <(echo '{"version": "0.3.0", "process": …}')
+$ ccon --config <(echo '{"version": "0.4.0", "process": …}')
 ```
 
 You can also specify the config JSON directly on the command line with
@@ -127,7 +127,7 @@ You can also specify the config JSON directly on the command line with
 pipes or process substitution are too awkward:
 
 ```
-$ ccon --config-string '{"version": "0.3.0", "process": …}'
+$ ccon --config-string '{"version": "0.4.0", "process": …}'
 ```
 
 There are additional examples focusing on specific tasks in the
@@ -142,7 +142,7 @@ The ccon version represented in the config file.
 #### Example
 
 ```json
-"version": "0.3.0"
+"version": "0.4.0"
 ```
 
 ### Namespaces

@@ -229,7 +229,7 @@ static void usage(FILE * stream, char *path)
 
 static void version()
 {
-	printf("ccon 0.3.0\n");
+	printf("ccon 0.4.0\n");
 }
 
 static void kill_child(int signum, siginfo_t * siginfo, void *unused)
@@ -386,6 +386,7 @@ static int validate_version(json_t * config)
 		"0.1.0",
 		"0.2.0",
 		"0.3.0",
+		"0.4.0",
 		NULL,
 	};
 	int i, err;

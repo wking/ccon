@@ -185,7 +185,7 @@ def convert_config(basedir, config, runtime, state):
         raise NotImplementedError(
             'unsupported OCI-spec version: {}'.format(version))
     c = {
-        'version': '0.3.0',
+        'version': '0.4.0',
     }
     config.pop('platform', None)  # nothing interesting in here
     namespaces = {
