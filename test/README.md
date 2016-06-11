@@ -36,6 +36,7 @@ digit.  The first digit classifies the test:
   [`readlink`][readlink.1], [`touch`][touch.1], [`test`][test.1], and
   [`tty`][tty.1].
 * [Grep][] for [`grep`][grep.1].
+* [net-tools][] for [`hostname`][hostname.1].
 * [Sed][] for [`sed`][sed.1].
 * [BusyBox][] for `busybox`.
 * [iproute2][] for [`ip`][ip.8].
@@ -46,6 +47,7 @@ digit.  The first digit classifies the test:
 [Grep]: https://www.gnu.org/software/grep/
 [iproute2]: http://www.linuxfoundation.org/collaborate/workgroups/networking/iproute2
 [libcap-ng]: http://people.redhat.com/sgrubb/libcap-ng/
+[net-tools]: http://net-tools.sourceforge.net/
 [prove]: http://perldoc.perl.org/prove.html
 [sed]: http://sed.sourceforge.net/
 [Sharness]: http://mlafeldt.github.io/sharness/
@@ -56,6 +58,7 @@ digit.  The first digit classifies the test:
 [env.1]: http://pubs.opengroup.org/onlinepubs/9699919799/utilities/env.html
 [grep.1]: http://pubs.opengroup.org/onlinepubs/9699919799/utilities/grep.html
 [head.1]: http://pubs.opengroup.org/onlinepubs/9699919799/utilities/head.html
+[hostname.1]: http://man7.org/linux/man-pages/man1/hostname.1.html
 [id.1]: http://pubs.opengroup.org/onlinepubs/9699919799/utilities/id.html
 [pwd.1]: http://pubs.opengroup.org/onlinepubs/9699919799/utilities/pwd.html
 [sed.1]: http://pubs.opengroup.org/onlinepubs/9699919799/utilities/sed.html
