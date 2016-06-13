@@ -1,0 +1,77 @@
+{
+	"ociVersion": "1.0.0-rc1",
+	"platform": {
+		"os": "linux",
+		"arch": "amd64"
+	},
+	"hostname": "mrsdalloway",
+	"root": {
+		"path": "rootfs",
+		"readonly": true
+	},
+	"process": {
+		"terminal": true,
+		"user": {
+			"uid": 0,
+			"gid": 0
+		},
+		"capabilities": [
+			"CAP_AUDIT_WRITE",
+			"CAP_KILL",
+			"CAP_NET_BIND_SERVICE"
+		],
+		"env": [
+			"PATH=/bin",
+			"TERM=xterm"
+		],
+		"cwd": "/root",
+		"args": ["busybox", "sh"]
+	},
+	"mounts": [
+		{
+			"source": "/tmp",
+			"destination": "/root",
+			"type": "bind",
+			"options": ["rbind", "rw"]
+		}
+	],
+	"linux": {
+		"namespaces": [
+			{
+				"type": "pid"
+			},
+			{
+				"type": "network"
+			},
+			{
+				"type": "mount"
+			},
+			{
+				"type": "ipc"
+			},
+			{
+				"type": "uts"
+			},
+			{
+				"type": "user"
+			},
+			{
+				"type": "mount"
+			}
+		],
+		"uidMappings": [
+			{
+				"hostID": 1000,
+				"containerID": 0,
+				"size": 1
+			}
+		],
+		"gidMappings": [
+			{
+				"hostID": 1000,
+				"containerID": 0,
+				"size": 1
+			}
+		]
+	}
+}

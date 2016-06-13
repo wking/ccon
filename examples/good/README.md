@@ -17,3 +17,5 @@ Examples of successful patterns:
     cgroup on exit](cgroups).
   * Launch a container from an OCI bundle
     * [OCI v0.1.0](oci/0.1.0)
+    * [OCI v0.5.0](oci/0.5.0)
+    * [OCI v1.0.0-rc1](oci/1.0.0-rc1)
