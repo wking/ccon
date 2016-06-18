@@ -1069,10 +1069,6 @@ static void exec_process(json_t * process, int dup_stdin, int *socket,
 		goto cleanup;
 	}
 
-	if (set_working_directory(process)) {
-		goto cleanup;
-	}
-
 	if (set_user_group(process)) {
 		goto cleanup;
 	}
