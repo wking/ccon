@@ -27,6 +27,7 @@ import argparse
 import inspect
 import json
 import os
+import resource
 import sys
 import textwrap
 import uuid
@@ -352,6 +353,7 @@ def convert_config(basedir, config, runtime, state):
                     'namespace'
                     .format(field))
             c['namespaces']['user'][field] = mapping
+    rlimits = None
     process = config.pop('process', None)
     if process:
         c['process'] = {}
@@ -372,6 +374,12 @@ def convert_config(basedir, config, runtime, state):
                     'process.user')
             if uid != 0:
                 c['namespaces']['user']['setgroups'] = False
+        if version in ['0.1.0', '0.2.0']:
+            rlimits = runtime.get('linux', {}).pop('rlimits', None)
+        elif version == '0.3.0':
+            rlimits = config.get('linux', {}).pop('rlimits', None)
+        else:
+            rlimits = process.pop('rlimits', None)
         if process:
             raise NotImplementedError(
                 'unparsed config.json process fields: {}'
@@ -403,6 +411,14 @@ def convert_config(basedir, config, runtime, state):
         if hooks:
             raise NotImplementedError(
                 'unparsed hooks: {}'.format(hooks))
+    if rlimits:
+        if 'hooks' not in c:
+            c['hooks'] = {}
+        if 'pre-start' not in c['hooks']:
+            c['hooks']['pre-start'] = []
+        c['hooks']['pre-start'].append({
+            'args': [sys.argv[0], 'rlimits', json.dumps(rlimits)],
+        })
     hostname = config.pop('hostname', None)
     if hostname:
         if 'hooks' not in c:
@@ -542,6 +558,17 @@ def hostname(hostname):
     os.execvp(args[0], args)
 
 
+def rlimits(rlimits):
+    """Helper for setting container resource limits.
+    """
+    pid = int(sys.stdin.read())
+    sys.stdin.close()
+    limits = json.loads(rlimits)
+    for limit in limits:
+        rsrc = getattr(resource, limit['type'])
+        resource.prlimit(pid, rsrc, (limit['soft'], limit['hard']))
+
+
 def main():
     parser = argparse.ArgumentParser(
         description=__doc__.strip(),
@@ -560,6 +587,7 @@ def main():
             ('config', config),
             ('hook', hook),
             ('hostname', hostname),
+            ('rlimits', rlimits),
             ]:
         doc = textwrap.dedent(func.__doc__).strip().replace('%', '%%')
         subparser = commands.add_parser(
@@ -591,6 +619,10 @@ def main():
             subparser.add_argument(
                 'hostname', metavar='HOSTNAME',
                 help='Hostname to set.')
+        if command == 'rlimits':
+            subparser.add_argument(
+                'rlimits', metavar='RLIMITS',
+                help='Resource limits to set (JSON).')
 
     args = parser.parse_args()
 
