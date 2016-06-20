@@ -88,7 +88,7 @@ static void version();
 static void kill_child(int signum, siginfo_t * siginfo, void *unused);
 static void reap_child(int signum, siginfo_t * siginfo, void *unused);
 static int validate_config(json_t * config);
-static int validate_version(json_t * config);
+static int validate_version(const char *version);
 static int run_container(json_t * config);
 static int handle_parent(json_t * config, pid_t cpid, int *socket);
 static int child_func(void *arg);
@@ -266,6 +266,7 @@ static int validate_config(json_t * config)
 {
 	json_t *value;
 	json_error_t error;
+	const char *version;
 	int err;
 
 	if (!json_is_object(config)) {
@@ -278,7 +279,14 @@ static int validate_config(json_t * config)
 		LOG("failed to get version from config\n");
 		return 1;
 	}
-	err = validate_version(value);
+
+	version = json_string_value(value);
+	if (!version) {
+		LOG("config version is not a string\n");
+		return 1;
+	}
+
+	err = validate_version(version);
 	if (err) {
 		return err;
 	}
@@ -379,9 +387,8 @@ static int validate_config(json_t * config)
 	return 0;
 }
 
-static int validate_version(json_t * config)
+static int validate_version(const char *version)
 {
-	const char *version = json_string_value(config);
 	const char *supported_versions[] = {
 		"0.1.0",
 		"0.2.0",
