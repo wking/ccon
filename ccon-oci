@@ -62,6 +62,7 @@ _MOUNT_FLAGS = {  # from mount(8) and mount(2)
     # MS_PRIVATE
     'ro': 'MS_RDONLY',
     # MS_REC
+    'rbind': 'MS_REC',  # undocumented runtime-spec example
     'relatime': 'MS_RELATIME',
     'remount': 'MS_REMOUNT',
     # MS_SHARED
@@ -140,8 +141,11 @@ def _convert_namespaces(namespaces):
     return ns
 
 
-def _mount_flags(options):
+def _mount_flags(type, options):
     flags = []
+    if type == 'bind':  # undocumented runtime-spec example
+        flags.append('MS_BIND')
+        type = None
     for option in list(options):
         if option in _MOUNT_FLAGS:
             flags.append(_MOUNT_FLAGS[option])
@@ -151,7 +155,7 @@ def _mount_flags(options):
             options.remove(option)
             if inverse in flags:
                 flags.remove(inverse)
-    return (flags, ','.join(options))
+    return (type, flags, ','.join(options))
 
 
 def _convert_split_mount(mount_point, mount_sources, root_path=None):
@@ -161,15 +165,17 @@ def _convert_split_mount(mount_point, mount_sources, root_path=None):
     name = mount_point.pop('name')
     mount_source = mount_sources[name].copy()
     options = mount_source.pop('options', [])
-    flags, data = _mount_flags(options=options)
+    type, flags, data = _mount_flags(
+        type=mount_source.pop('type'), options=options)
     target = mount_point.pop('path')
     if root_path:
         target = os.path.join(root_path, target.lstrip(os.path.sep))
     mount = {
-        'type': mount_source.pop('type'),
         'source': mount_source.pop('source'),
         'target': target,
     }
+    if type:
+        mount['type'] = type
     if flags:
         mount['flags'] = flags
     if data:
@@ -189,15 +195,16 @@ def _convert_mount(mount, root_path=None):
     """
     mounts = []
     options = mount.pop('options', [])
-    flags, data = _mount_flags(options=options)
+    type, flags, data = _mount_flags(type=mount.pop('type'), options=options)
     target = mount.pop('destination')
     if root_path:
         target = os.path.join(root_path, target.lstrip(os.path.sep))
     _mount = {
-        'type': mount.pop('type'),
         'source': mount.pop('source'),
         'target': target,
     }
+    if type:
+        mount['type'] = type
     if flags:
         _mount['flags'] = flags
     if data:
