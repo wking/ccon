@@ -24,12 +24,14 @@
 """
 
 import argparse
+import base64
 import inspect
 import json
 import os
 import resource
 import sys
 import textwrap
+import unicodedata
 import uuid
 
 
@@ -481,8 +483,16 @@ def _load_config(bundle='.', id=None):
     }
 
 
-def start(bundle='.', id=None, verbose=False):
-    """Start a container from a bundle directory.
+def _socket_path(id):
+    id_nfc = unicodedata.normalize('NFC', id)
+    id_utf8 = id_nfc.encode('UTF-8')
+    id_base64 = base64.b64encode(id_utf8, altchars=b'-_')
+    tmp_dir = os.environ.get('TMPDIR', '/tmp')
+    return os.path.join(tmp_dir, 'ccon-oci', id_base64.decode('UTF-8'))
+
+
+def create(bundle='.', id=None, verbose=False):
+    """Create a container from a bundle directory.
     """
     args = ['ccon']
     if verbose:
@@ -490,11 +500,25 @@ def start(bundle='.', id=None, verbose=False):
     config_state = _load_config(bundle=bundle, id=id)
     config = config_state['config']
     state = config_state['state']
+    socket = _socket_path(state['id'])
+    socket_dir = os.path.dirname(socket)
+    os.makedirs(socket_dir, exist_ok=True)
+    args.extend(['--socket', socket])
     # os.pipe opens with O_CLOEXEC since Python 3.4
     read, write = os.pipe2(0)
     os.write(write, json.dumps(config).encode('UTF-8'))
     os.close(write)
     args.extend(['--config', '/proc/self/fd/{}'.format(read)])
+    os.execvp(args[0], args)
+
+
+def start(id, verbose=False):
+    """Start the user-specified code.
+    """
+    socket = _socket_path(id)
+    args = ['ccon-cli', '--socket', socket, '--config-string', '']
+    if verbose:
+        args.append('--verbose')
     os.execvp(args[0], args)
 
 
@@ -583,6 +607,7 @@ def main():
             "'%(prog)s ... <command> --help'."))
     for command, func in [
             ('version', version),
+            ('create', create),
             ('start', start),
             ('config', config),
             ('hook', hook),
@@ -596,7 +621,7 @@ def main():
             description=doc,
             formatter_class=argparse.RawDescriptionHelpFormatter)
         subparser.set_defaults(func=func)
-        if command in ['start', 'config']:
+        if command in ['create', 'config']:
             subparser.add_argument(
                 '--id', metavar='ID',
                 help='Set the container ID for the new container.')
@@ -605,6 +630,10 @@ def main():
                 help=(
                     'Override the path to the bundle directory (defaults to '
                     'the current working directory).'))
+        if command == 'start':
+            subparser.add_argument(
+                'id', metavar='ID',
+                help='Set the container ID to start.')
         if command == 'hook':
             subparser.add_argument(
                 '--state', metavar='JSON', required=True,
