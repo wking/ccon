@@ -25,10 +25,13 @@
 
 import argparse
 import base64
+import datetime
 import inspect
 import json
 import os
 import resource
+import shutil
+import subprocess
 import sys
 import textwrap
 import unicodedata
@@ -413,23 +416,28 @@ def convert_config(basedir, config, runtime, state):
         if hooks:
             raise NotImplementedError(
                 'unparsed hooks: {}'.format(hooks))
+    if 'hooks' not in c:
+        c['hooks'] = {}
+    if 'pre-start' not in c['hooks']:
+        c['hooks']['pre-start'] = []
+    if 'post-stop' not in c['hooks']:
+        c['hooks']['post-stop'] = []
     if rlimits:
-        if 'hooks' not in c:
-            c['hooks'] = {}
-        if 'pre-start' not in c['hooks']:
-            c['hooks']['pre-start'] = []
         c['hooks']['pre-start'].append({
             'args': [sys.argv[0], 'rlimits', json.dumps(rlimits)],
         })
     hostname = config.pop('hostname', None)
     if hostname:
-        if 'hooks' not in c:
-            c['hooks'] = {}
-        if 'pre-start' not in c['hooks']:
-            c['hooks']['pre-start'] = []
         c['hooks']['pre-start'].append({
             'args': [sys.argv[0], 'hostname', hostname],
         })
+    c['hooks']['pre-start'].append({
+        'args': [sys.argv[0], 'event', '--register', 'created', state['id']],
+    })
+    c['hooks']['post-stop'].extend([
+        {'args': [sys.argv[0], 'event', '--register', 'stopped', state['id']]},
+        {'args': [sys.argv[0], 'delete', state['id']]},
+    ])
     if 'linux' in config and not config['linux']:
         config.pop('linux')  # remove empty dictionary
     if runtime and 'linux' in runtime and not runtime['linux']:
@@ -483,12 +491,16 @@ def _load_config(bundle='.', id=None):
     }
 
 
-def _socket_path(id):
-    id_nfc = unicodedata.normalize('NFC', id)
+def _container_dir(container_id):
+    id_nfc = unicodedata.normalize('NFC', container_id)
     id_utf8 = id_nfc.encode('UTF-8')
     id_base64 = base64.b64encode(id_utf8, altchars=b'-_')
     tmp_dir = os.environ.get('TMPDIR', '/tmp')
     return os.path.join(tmp_dir, 'ccon-oci', id_base64.decode('UTF-8'))
+
+
+def _socket_path(container_id):
+    return os.path.join(_container_dir(container_id=container_id), 'sock')
 
 
 def create(bundle='.', id=None, verbose=False):
@@ -500,7 +512,7 @@ def create(bundle='.', id=None, verbose=False):
     config_state = _load_config(bundle=bundle, id=id)
     config = config_state['config']
     state = config_state['state']
-    socket = _socket_path(state['id'])
+    socket = _socket_path(container_id=state['id'])
     socket_dir = os.path.dirname(socket)
     os.makedirs(socket_dir, exist_ok=True)
     args.extend(['--socket', socket])
@@ -515,11 +527,24 @@ def create(bundle='.', id=None, verbose=False):
 def start(id, verbose=False):
     """Start the user-specified code.
     """
-    socket = _socket_path(id)
+    socket = _socket_path(container_id=id)
     args = ['ccon-cli', '--socket', socket, '--config-string', '']
     if verbose:
         args.append('--verbose')
-    os.execvp(args[0], args)
+    subprocess.check_call(args)
+    event(id=id, register='started')
+
+
+def _failed_to_remove(func, path, exc_info):
+    sys.stderr.write('failed to remove {!r}\n'.format(path))
+
+
+def delete(id):
+    """Helper for releasing persistent container resources.
+    """
+    sys.stdin.close()
+    container_dir = _container_dir(container_id=id)
+    shutil.rmtree(container_dir, onerror=_failed_to_remove)
 
 
 def config(bundle='.', id=None):
@@ -552,6 +577,38 @@ def hook(state=None, hook=None, read_pid=False):
     os.dup2(read, stdin_fileno)
     os.close(read)
     os.execvpe(hook['args'][0], hook['args'], env)
+
+
+def event(id, register=None, monitor=False, event=None, historic=False):
+    """Helper for registering container-status events.
+    """
+    stdin_fileno = sys.stdin.fileno()
+    sys.stdin.close()
+    event_dir = os.path.join(_container_dir(container_id=id), 'event')
+    if register:
+        event = {
+            'type': register,
+            'id': id,
+            'timestamp': datetime.datetime.utcnow().isoformat() + 'Z'
+        }
+        # os.pipe opens with O_CLOEXEC since Python 3.4
+        read, write = os.pipe2(0)
+        os.write(write, json.dumps(event).encode('UTF-8'))
+        os.write(write, '\n'.encode('UTF-8'))
+        os.close(write)
+        os.dup2(read, stdin_fileno)
+        os.close(read)
+        args = ['inotify-pub', event_dir, register]
+    else:  # subscribe
+        args = ['inotify-sub']
+        if monitor:
+            args.append('--monitor')
+        if event:
+            args.extend(['--event', event])
+        if historic:
+            args.append('--historic')
+        args.append(event_dir)
+    os.execvp(args[0], args)
 
 
 def hostname(hostname):
@@ -611,6 +668,8 @@ def main():
             ('start', start),
             ('config', config),
             ('hook', hook),
+            ('delete', delete),
+            ('event', event),
             ('hostname', hostname),
             ('rlimits', rlimits),
             ]:
@@ -634,6 +693,10 @@ def main():
             subparser.add_argument(
                 'id', metavar='ID',
                 help='Set the container ID to start.')
+        if command == 'delete':
+            subparser.add_argument(
+                'id', metavar='ID',
+                help='Set the container ID to delete.')
         if command == 'hook':
             subparser.add_argument(
                 '--state', metavar='JSON', required=True,
@@ -644,6 +707,32 @@ def main():
             subparser.add_argument(
                 '--hook', metavar='JSON', required=True,
                 help='Ccon hook JSON for the user-specified hook.')
+        if command == 'event':
+            subparser.add_argument(
+                'id', metavar='ID',
+                help='Set the container ID to connect to.')
+            subparser.add_argument(
+                '--register', metavar='EVENT',
+                help='Register a container-status event (for internal use).')
+            subparser.add_argument(
+                '-m', '--monitor', action='store_true',
+                help=(
+                    'Instead of exiting after receiving a single event, '
+                    'execute indefinitely.  The default behavior is to exit '
+                    'after the first event occurs.'
+                ))
+            subparser.add_argument(
+                '-e', '--event', metavar='EVENT',
+                help=(
+                    'Listen for specific events only.  If ommitted, all '
+                    'events are listened for.'
+                ))
+            subparser.add_argument(
+                '-H', '--historic', action='store_true',
+                help=(
+                    'Replay historic events.  If ommitted, only new events '
+                    'are output.'
+                ))
         if command == 'hostname':
             subparser.add_argument(
                 'hostname', metavar='HOSTNAME',
