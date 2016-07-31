@@ -79,7 +79,9 @@ static pid_t child_pid;
 static pid_t hook_pid;
 
 static int parse_args(int argc, char **argv, const char **config_path,
-		      const char **config_string, const char **socket_path);
+		      const char **config_string,
+		      const char **pseudoterminal_socket_path,
+		      const char **socket_path);
 static void usage(FILE * stream, char *path);
 static void version();
 static void kill_child(int signum, siginfo_t * siginfo, void *unused);
@@ -87,9 +89,12 @@ static void reap_child(int signum, siginfo_t * siginfo, void *unused);
 static int validate_config(json_t * config);
 static int validate_version(const char *version);
 static float version_api(const char *version);
-static int run_container(json_t * config, const char *socket_path);
-static int handle_parent(json_t * config, const char *socket_path, pid_t cpid,
-			 int *socket);
+static int run_container(json_t * config,
+			 const char *pseudoterminal_socket_path,
+			 const char *socket_path);
+static int handle_parent(json_t * config,
+			 const char *pseudoterminal_socket_path,
+			 const char *socket_path, pid_t cpid, int *socket);
 static int child_func(void *arg);
 static int handle_child(json_t * config, int *socket, int *exec_fd,
 			namespace_fd_t ** namespace_fds);
@@ -122,18 +127,22 @@ static int _wait(pid_t pid, const char *name);
 static char **json_array_of_strings_value(json_t * array);
 static int close_pipe(int pipe_fd[]);
 static int splice_pseudoterminal_master(int *master, int *slave);
+static int send_pseudoterminal_master(const char *socket_path, int *master);
 static int mkdir_all(const char *path, mode_t mode);
 
 int main(int argc, char **argv)
 {
 	const char *config_path = "config.json";
 	const char *config_string = NULL;
+	const char *pseudoterminal_socket_path = NULL;
 	const char *socket_path = NULL;
 	int err;
 	json_t *config;
 	json_error_t error;
 
-	if (parse_args(argc, argv, &config_path, &config_string, &socket_path)) {
+	if (parse_args
+	    (argc, argv, &config_path, &config_string,
+	     &pseudoterminal_socket_path, &socket_path)) {
 		return 1;
 	}
 
@@ -156,7 +165,7 @@ int main(int argc, char **argv)
 		goto cleanup;
 	}
 
-	err = run_container(config, socket_path);
+	err = run_container(config, pseudoterminal_socket_path, socket_path);
 
  cleanup:
 	if (config) {
@@ -167,7 +176,9 @@ int main(int argc, char **argv)
 }
 
 static int parse_args(int argc, char **argv, const char **config_path,
-		      const char **config_string, const char **socket_path)
+		      const char **config_string,
+		      const char **pseudoterminal_socket_path,
+		      const char **socket_path)
 {
 	int c, option_index;
 	static struct option long_options[] = {
@@ -176,13 +187,14 @@ static int parse_args(int argc, char **argv, const char **config_path,
 		{"version", no_argument, NULL, 'v'},
 		{"config", required_argument, NULL, 'c'},
 		{"config-string", required_argument, NULL, 's'},
+		{"pseudoterminal-socket", required_argument, NULL, 'p'},
 		{"socket", required_argument, NULL, 'S'},
 		{NULL},
 	};
 
 	while (1) {
 		option_index = 0;
-		c = getopt_long(argc, argv, "hVvc:s:S:", long_options,
+		c = getopt_long(argc, argv, "hVvc:p:s:S:", long_options,
 				&option_index);
 		if (c == -1) {
 			break;
@@ -201,6 +213,9 @@ static int parse_args(int argc, char **argv, const char **config_path,
 			exit(0);
 		case 'c':
 			*config_path = optarg;
+			break;
+		case 'p':
+			*pseudoterminal_socket_path = optarg;
 			break;
 		case 's':
 			*config_string = optarg;
@@ -227,6 +242,8 @@ static void usage(FILE * stream, char *path)
 		"  -v, --version\tPrint version information and exit\n");
 	fprintf(stream,
 		"  -c, --config=PATH\tOverride config.json with an alternate path\n");
+	fprintf(stream,
+		"  -p, --pseudoterminal-socket=PATH\tSpecify a socket path for passing the pseudoterminal master out\n");
 	fprintf(stream,
 		"  -s, --config-string=JSON\tSpecify config JSON on the command line, overriding --config and its PATH\n");
 	fprintf(stream,
@@ -484,7 +501,9 @@ static float version_api(const char *version)
 	return api;
 }
 
-static int run_container(json_t * config, const char *socket_path)
+static int run_container(json_t * config,
+			 const char *pseudoterminal_socket_path,
+			 const char *socket_path)
 {
 	json_t *process;
 	struct sigaction act;
@@ -593,7 +612,9 @@ static int run_container(json_t * config, const char *socket_path)
 		child_args.namespace_fds = NULL;
 	}
 
-	err = handle_parent(config, socket_path, cpid, &sockets[0]);
+	err =
+	    handle_parent(config, pseudoterminal_socket_path, socket_path, cpid,
+			  &sockets[0]);
 
  cleanup:
 	cpid = child_pid;
@@ -630,8 +651,9 @@ static int run_container(json_t * config, const char *socket_path)
 	return err;
 }
 
-static int handle_parent(json_t * config, const char *socket_path, pid_t cpid,
-			 int *socket)
+static int handle_parent(json_t * config,
+			 const char *pseudoterminal_socket_path,
+			 const char *socket_path, pid_t cpid, int *socket)
 {
 	json_t *process, *console = NULL, *terminal = NULL;
 	char buf[MESSAGE_SIZE];
@@ -736,9 +758,17 @@ static int handle_parent(json_t * config, const char *socket_path, pid_t cpid,
 	*socket = -1;
 
 	if (!err && master >= 0) {
-		if (splice_pseudoterminal_master(&master, &slave)) {
-			err = 1;
-			kill_child(0, NULL, NULL);
+		if (pseudoterminal_socket_path) {
+			if (send_pseudoterminal_master
+			    (pseudoterminal_socket_path, &master)) {
+				err = 1;
+				kill_child(0, NULL, NULL);
+			}
+		} else {
+			if (splice_pseudoterminal_master(&master, &slave)) {
+				err = 1;
+				kill_child(0, NULL, NULL);
+			}
 		}
 	}
 
@@ -2632,5 +2662,53 @@ static int mkdir_all(const char *path, mode_t mode)
 	if (path_copy != NULL) {
 		free(path_copy);
 	}
+	return err;
+}
+
+static int send_pseudoterminal_master(const char *socket_path, int *master)
+{
+	int sock;
+	struct sockaddr_un name;
+	int err = 0;
+
+	sock = socket(AF_UNIX, SOCK_SEQPACKET, 0);
+	if (sock == -1) {
+		PERROR("socket");
+		return 1;
+	}
+
+	memset(&name, 0, sizeof(struct sockaddr_un));
+	name.sun_family = AF_UNIX;
+	strncpy(name.sun_path, socket_path, sizeof(name.sun_path) - 1);
+	LOG("connect to %s\n", socket_path);
+	if (connect
+	    (sock, (const struct sockaddr *)&name,
+	     sizeof(struct sockaddr_un)) == -1) {
+		PERROR("connect");
+		err = 1;
+		goto cleanup;
+	}
+
+	if (sendfd(sock, master, 1) == -1) {
+		err = 1;
+		goto cleanup;
+	}
+
+ cleanup:
+	if (sock >= 0) {
+		if (close(sock) == -1) {
+			PERROR("close pseudoterminal socket");
+			err = 1;
+		}
+	}
+
+	if (*master >= 0) {
+		if (close(*master) == -1) {
+			PERROR("close pseudoterminal master");
+			err = 1;
+		}
+		*master = -1;
+	}
+
 	return err;
 }
