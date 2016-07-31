@@ -412,7 +412,7 @@ the user's control-C into [`SIGINT`][signal.7] for the container.
 Containers that do not [pivot root](#mount-namespace) or who otherwise
 keep access to the host [ptmx][pts.4] can create such a pseudoterminal
 by calling opening the [ptmx][pts.4] (e.g. with
-[`posix_openpt`][posix_openpt.3]).
+[`posix_openpt`][posix_openpt.3p]).
 
 Containers that are pivoting to a new root and mounting their
 [devpts][] with [newinstance][mount.8] will want to ensure that the
@@ -420,13 +420,22 @@ pseudoterminal is created using a devpts instance that will be
 accessible after the pivot, and there are [a number of issues to
 consider][devpts].
 
-* **`terminal`** (optional, boolean) if true, the process will [open
-  its local `/dev/ptmx`][pts.4] (e.g. with
-  [`posix_openpt`][posix_openpt.3]), [`dup`][dup.2] the pseudoterminal
-  slave over its standard streams, and send the pseudoterminal master
-  back to the host process.  The host process will continually copy
-  its [standard input][stdin.3] to that pseudoterminal master and the
+* **`terminal`** (optional, boolean) if true, the process will
+  [open its local `/dev/ptmx`][pts.4] (e.g. with
+  [`posix_openpt`][posix_openpt.3p]), grant access to the slave with
+  [`grantpt`][grantpt.3p], [`dup`][dup.2] the pseudoterminal slave over
+  its standard streams, and send the pseudoterminal master back to the
+  host process.  The host process will continually copy its
+  [standard input][stdin.3] to that pseudoterminal master and the
   pseudoterminal master to its [standard output][stdin.3].
+
+Before [77356912][glibc-77356912] (included in version 2.23, released
+2016-02-19), [glibc][]'s [`grantpt`][grantpt.3] was more agressive
+about changing the pseudterminal slave's group, which [could fail for
+unprivileged users][glibc-bug-19347].  Unprivileged users linking
+older versions of glibc can work around the old behavior by ensuring
+`tty` is not defined in the `/etc/group` visible from the container's
+mount namespace.
 
 ##### Example
 
@@ -777,8 +786,10 @@ be distributed under the GPLv3+.
 [bash-process-substitution]: https://www.gnu.org/software/bash/manual/html_node/Process-Substitution.html
 [BusyBox]: http://www.busybox.net/
 [GCC]: http://gcc.gnu.org/
-[glibc-license]: https://sourceware.org/git/?p=glibc.git;a=blob;f=COPYING.LIB;hb=glibc-2.22
 [glibc]: https://www.gnu.org/software/libc/
+[glibc-license]: https://sourceware.org/git/?p=glibc.git;a=blob;f=COPYING.LIB;hb=glibc-2.22
+[glibc-77356912]: https://sourceware.org/git/?p=glibc.git;a=commit;h=77356912e83601fd0240d22fe4d960348b82b5c3
+[glibc-bug-19347]: https://sourceware.org/bugzilla/show_bug.cgi?id=19347
 [indent]: https://www.gnu.org/software/indent/
 [Jansson]: http://www.digip.org/jansson/
 [jansson-license]: https://github.com/akheron/jansson/blob/v2.7/LICENSE
@@ -825,7 +836,8 @@ be distributed under the GPLv3+.
 [environ.3p]: https://www.kernel.org/pub/linux/docs/man-pages/man-pages-posix/
 [exec.3]: http://man7.org/linux/man-pages/man3/exec.3.html
 [getcwd.3]: http://man7.org/linux/man-pages/man3/getcwd.3.html
-[posix_openpt.3]: http://man7.org/linux/man-pages/man3/posix_openpt.3.html
+[grantpt.3p]: http://pubs.opengroup.org/onlinepubs/9699919799/functions/grantpt.html
+[posix_openpt.3p]: http://pubs.opengroup.org/onlinepubs/9699919799/functions/posix_openpt.html
 [stdin.3]: http://man7.org/linux/man-pages/man3/stdin.3.html
 [pts.4]: http://man7.org/linux/man-pages/man4/pty.4.html
 [filesystems.5]: http://man7.org/linux/man-pages/man5/filesystems.5.html
