@@ -432,7 +432,7 @@ consider][devpts].
   pseudoterminal master to its [standard output][stdin.3].
 
 Before [77356912][glibc-77356912] (included in version 2.23, released
-2016-02-19), [glibc][]'s [`grantpt`][grantpt.3] was more agressive
+2016-02-19), [glibc][]'s [`grantpt`][grantpt.3p] was more agressive
 about changing the pseudterminal slave's group, which [could fail for
 unprivileged users][glibc-bug-19347].  Unprivileged users linking
 older versions of glibc can work around the old behavior by ensuring
