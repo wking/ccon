@@ -264,7 +264,9 @@ processes inside a user namespace.
 
 If they don't start with a slash, **`source`** and **`target`** are
 interpreted as paths relative to ccon's [current working
-directory][getcwd.3].
+directory][getcwd.3].  If **`target`** does not exist, ccon will
+attempt to create it by calling [`mkdir`][mkdir.3p], making multiple
+calls if necessary.
 
 In addition to the usual types supported by [`mount`][mount.2], ccon
 supports a `pivot-root` **`type`** that invokes the
@@ -837,6 +839,7 @@ be distributed under the GPLv3+.
 [exec.3]: http://man7.org/linux/man-pages/man3/exec.3.html
 [getcwd.3]: http://man7.org/linux/man-pages/man3/getcwd.3.html
 [grantpt.3p]: http://pubs.opengroup.org/onlinepubs/9699919799/functions/grantpt.html
+[mkdir.3p]: http://pubs.opengroup.org/onlinepubs/9699919799/functions/mkdir.html
 [posix_openpt.3p]: http://pubs.opengroup.org/onlinepubs/9699919799/functions/posix_openpt.html
 [stdin.3]: http://man7.org/linux/man-pages/man3/stdin.3.html
 [pts.4]: http://man7.org/linux/man-pages/man4/pty.4.html

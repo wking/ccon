@@ -124,6 +124,7 @@ static int close_pipe(int pipe_fd[]);
 static int sendfd(int socket, int *fd);
 static int recvfd(int socket, int *fd);
 static int splice_pseudoterminal_master(int *master);
+static int mkdir_all(const char *path, mode_t mode);
 
 int main(int argc, char **argv)
 {
@@ -1889,6 +1890,10 @@ static int handle_mounts(json_t * config)
 				return 1;
 			}
 		} else {
+			if (mkdir_all(target, 0777) == -1) {
+				return 1;
+			}
+
 			LOG("mount %lu: %s to %s (type: %s, flags: %lu, data %s)\n", (unsigned long int)i, source, target, type, flags, data);
 			if (mount(source, target, type, flags, data) == -1) {
 				PERROR("mount");
@@ -2364,5 +2369,39 @@ static int splice_pseudoterminal_master(int *master)
 		*master = -1;
 	}
 
+	return err;
+}
+
+static int mkdir_all(const char *path, mode_t mode)
+{
+	struct stat buf;
+	char *path_copy = NULL, *dir = NULL;
+	int err = 0;
+
+	if (stat(path, &buf) == -1) {
+		if (errno == ENOENT) {
+			path_copy = strdup(path);
+			dir = dirname(path_copy);
+			if (mkdir_all(dir, mode) == -1) {
+				err = -1;
+				goto cleanup;
+			}
+			LOG("create directory %s\n", path);;
+			if (mkdir(path, mode) == -1) {
+				PERROR("mkdir");
+				err = -1;
+				goto cleanup;
+			}
+		} else {
+			PERROR("stat");
+			err = -1;
+			goto cleanup;
+		}
+	}
+
+ cleanup:
+	if (path_copy != NULL) {
+		free(path_copy);
+	}
 	return err;
 }
