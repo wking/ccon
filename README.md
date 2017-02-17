@@ -20,6 +20,7 @@ less opinionated than [LXC][lxc.container.conf.5]).
     * [Network namespace](#network-namespace)
     * [IPC namespace](#ipc-namespace)
     * [UTS namespace](#uts-namespace)
+  * [Console](#console)
   * [Process](#process)
     * [Terminal](#terminal)
     * [User](#user)
@@ -61,6 +62,8 @@ synchronize the container setup.  Here's an outline of the lifecycle:
 | sends exec-message →             |                               |
 |                                  | opens the local ptmx          |
 |                                  | ← sends pseudoterminal master |
+|                                  | bind mounts `/dev/console`    |
+|                                  | ← sends pseudoterminal slave  |
 | waits on child death             | executes user process         |
 |   splicing standard streams      | …                             |
 |   onto the pseduoterminal master |                               |
@@ -372,6 +375,28 @@ for [`sethostname`][gethostname.2].
   * **`path`** (optional, string) the absolute path to a UTS namespace
     which the container process should join.
 
+### Console
+
+* **`console`** (optional, boolean) if true, the container process
+  will [open its local `/dev/ptmx`][pts.4] (e.g. with
+  [`posix_openpt`][posix_openpt.3p]), grant access to the slave with
+  [`grantpt`][grantpt.3p], [bind `mount`][mount.2] the pseudoterminal
+  slave to `/dev/console`, and send both the pseudoterminal master and
+  slave back to the host process.  The host process will continually
+  copy its [standard input][stdin.3] to that pseudoterminal master and
+  the pseudoterminal master to its [standard output][stdin.3].  If
+  [**`process.terminal`**](#terminal) is also true, the same
+  pseudoterminal will be used for both `/dev/console` and the
+  container process's [standard streams][stdin.3].
+
+Some applications (including [systemd][systemd-container-interface])
+require a TTY at `/dev/console`.  This setting allows you to provide
+that console without [`dup`][dup.2]ing over the container process's
+standard streams.
+
+For more details on why using the container's `/dev/ptmx` is
+important, see the [**`process.terminal`** documentation](#terminal).
+
 ### Process
 
 After the container setup is finished, the container process can
@@ -424,7 +449,10 @@ consider][devpts].
   its standard streams, and send the pseudoterminal master back to the
   host process.  The host process will continually copy its
   [standard input][stdin.3] to that pseudoterminal master and the
-  pseudoterminal master to its [standard output][stdin.3].
+  pseudoterminal master to its [standard output][stdin.3].  If
+  [**`console`**](#console) is also true, the same pseudoterminal will
+  be used for both `/dev/console` and the container process's standard
+  streams.
 
 Before [77356912][glibc-77356912] (included in version 2.23, released
 2016-02-19), [glibc][]'s [`grantpt`][grantpt.3p] was more agressive
@@ -796,6 +824,7 @@ be distributed under the GPLv3+.
 [Nginx]: http://nginx.org/
 [pkg-config]: http://www.freedesktop.org/wiki/Software/pkg-config/
 [semver]: http://semver.org/spec/v2.0.0.html
+[systemd-container-interface]: https://www.freedesktop.org/wiki/Software/systemd/ContainerInterface/
 
 [GPL-compatible]: https://www.gnu.org/licenses/license-list.html#GPLCompatibleLicenses
 [mit]: https://www.gnu.org/licenses/license-list.html#Expat

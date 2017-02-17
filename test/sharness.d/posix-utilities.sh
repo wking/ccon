@@ -19,6 +19,7 @@ command -v env >/dev/null 2>/dev/null && test_set_prereq ENV
 command -v grep >/dev/null 2>/dev/null && test_set_prereq GREP
 command -v head >/dev/null 2>/dev/null && test_set_prereq HEAD
 command -v id >/dev/null 2>/dev/null && test_set_prereq ID
+command -v printf >/dev/null 2>/dev/null && test_set_prereq PRINTF
 command -v pwd >/dev/null 2>/dev/null && test_set_prereq PWD
 command -v sed >/dev/null 2>/dev/null && test_set_prereq SED
 command -v sh >/dev/null 2>/dev/null && test_set_prereq SHELL

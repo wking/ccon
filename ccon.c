@@ -94,14 +94,15 @@ static int handle_parent(json_t * config, pid_t cpid, int *socket);
 static int child_func(void *arg);
 static int handle_child(json_t * config, int *socket, int *exec_fd,
 			namespace_fd_t ** namespace_fds);
-static int set_terminal(json_t * process, int dup_stdin, int *socket);
+static int set_terminal(json_t * process, int console, int dup_stdin,
+			int *socket);
 static int set_working_directory(json_t * process);
 static int set_user_group(json_t * process);
 static int _capng_name_to_capability(const char *name);
 static int set_capabilities(json_t * process);
 static void exec_container_process(json_t * config, int *socket, int *exec_fd);
-static void exec_process(json_t * process, int dup_stdin, int *socket,
-			 int *exec_fd);
+static void exec_process(json_t * process, int console, int dup_stdin,
+			 int *socket, int *exec_fd);
 static int get_host_exec_fd(json_t * config, int *exec_fd);
 static int get_namespace_fds(json_t * config, namespace_fd_t ** namespace_fds);
 static int run_hooks(json_t * config, const char *name, pid_t cpid);
@@ -121,9 +122,9 @@ static int open_in_path(const char *name, int flags);
 static int _wait(pid_t pid, const char *name);
 static char **json_array_of_strings_value(json_t * array);
 static int close_pipe(int pipe_fd[]);
-static int sendfd(int socket, int *fd);
+static int sendfd(int socket, int *fd, int close_fd);
 static int recvfd(int socket, int *fd);
-static int splice_pseudoterminal_master(int *master);
+static int splice_pseudoterminal_master(int *master, int *slave);
 static int mkdir_all(const char *path, mode_t mode);
 
 int main(int argc, char **argv)
@@ -321,6 +322,7 @@ static int validate_config(json_t * config)
 	        "s?s,"	/* "path": "/proc/123/ns/uts */
 	      "},"	/* }  (uts) */
 	    "},"	/* }  (namespaces) */
+	    "s?b,"	/* "console": { */
 	    "s?{"	/* "process": { */
 	      "s?b,"	/* "terminal": true */
 	      "s?{"	/* "user": { */
@@ -358,6 +360,7 @@ static int validate_config(json_t * config)
 	      "path",
 	    "uts",
 	      "path",
+	  "console",
 	  "process",
 	    "terminal",
 	    "user",
@@ -555,13 +558,13 @@ static int run_container(json_t * config)
 
 static int handle_parent(json_t * config, pid_t cpid, int *socket)
 {
-	json_t *process, *terminal = NULL;
+	json_t *process, *console = NULL, *terminal = NULL;
 	char buf[MESSAGE_SIZE];
 	struct iovec iov;
 	struct msghdr msg = { NULL, 0, &iov, 1, NULL, 0, 0 };
 	size_t len;
 	ssize_t n;
-	int master = -1, err = 0, exit = 0;
+	int master = -1, slave = -1, err = 0, exit = 0;
 
 	if (set_user_namespace_mappings(config, cpid)) {
 		err = 1;
@@ -618,11 +621,20 @@ static int handle_parent(json_t * config, pid_t cpid, int *socket)
 		goto wait;
 	}
 
+	console = json_object_get(config, "console");
 	process = json_object_get(config, "process");
 	if (process) {
 		terminal = json_object_get(process, "terminal");
-		if (json_boolean_value(terminal)) {
+		if (json_boolean_value(terminal)
+		    || (console && json_boolean_value(console))) {
 			if (recvfd(*socket, &master)) {
+				err = 1;
+				goto wait;
+			}
+		}
+
+		if (console && json_boolean_value(console)) {
+			if (recvfd(*socket, &slave)) {
 				err = 1;
 				goto wait;
 			}
@@ -643,7 +655,7 @@ static int handle_parent(json_t * config, pid_t cpid, int *socket)
 	*socket = -1;
 
 	if (!err && master >= 0) {
-		if (splice_pseudoterminal_master(&master)) {
+		if (splice_pseudoterminal_master(&master, &slave)) {
 			err = 1;
 			kill_child(0, NULL, NULL);
 		}
@@ -652,6 +664,14 @@ static int handle_parent(json_t * config, pid_t cpid, int *socket)
 	if (master >= 0) {
 		if (close(master) == -1) {
 			PERROR("close pseudoterminal master");
+			err = 1;
+			kill_child(0, NULL, NULL);
+		}
+	}
+
+	if (slave >= 0) {
+		if (close(slave) == -1) {
+			PERROR("close pseudoterminal slave");
 			err = 1;
 			kill_child(0, NULL, NULL);
 		}
@@ -777,18 +797,19 @@ static int handle_child(json_t * config, int *socket, int *exec_fd,
 	return 1;
 }
 
-static int set_terminal(json_t * process, int dup_stdin, int *socket)
+static int set_terminal(json_t * process, int console, int dup_stdin,
+			int *socket)
 {
 	json_t *terminal;
 	char *slave_name;
 	int err = 0, master = -1, slave = -1;
 
 	terminal = json_object_get(process, "terminal");
-	if (!terminal) {
+	if (!terminal && !console) {
 		return 0;
 	}
 
-	if (json_boolean_value(terminal)) {
+	if (json_boolean_value(terminal) || console) {
 		if (socket == NULL) {
 			LOG("cannot create a pseudoterminal without a socket for master\n");
 			return 1;
@@ -832,38 +853,47 @@ static int set_terminal(json_t * process, int dup_stdin, int *socket)
 			goto cleanup;
 		}
 
-		if (sendfd(*socket, &master)) {
+		if (sendfd(*socket, &master, 1)) {
 			err = 1;
 			goto cleanup;
 		}
 
-		if (dup_stdin) {
-			if (dup2(slave, STDIN_FILENO) == -1) {
-				PERROR("dup2");
+		if (console) {
+			LOG("bind mount %s to /dev/console\n", slave_name);
+			if (mount
+			    (slave_name, "/dev/console", NULL, MS_BIND,
+			     NULL) == -1) {
+				PERROR("mount");
+				return 1;
+			}
+
+			if (sendfd(*socket, &slave, 0)) {
 				err = 1;
 				goto cleanup;
 			}
 		}
 
-		if (dup2(slave, STDOUT_FILENO) == -1) {
-			PERROR("dup2");
-			err = 1;
-			goto cleanup;
-		}
+		if (json_boolean_value(terminal)) {
+			if (dup_stdin) {
+				if (dup2(slave, STDIN_FILENO) == -1) {
+					PERROR("dup2");
+					err = 1;
+					goto cleanup;
+				}
+			}
 
-		if (dup2(slave, STDERR_FILENO) == -1) {
-			PERROR("dup2");
-			err = 1;
-			goto cleanup;
-		}
+			if (dup2(slave, STDOUT_FILENO) == -1) {
+				PERROR("dup2");
+				err = 1;
+				goto cleanup;
+			}
 
-		if (close(slave)) {
-			PERROR("closing pseudoterminal slave");
-			slave = -1;
-			err = 1;
-			goto cleanup;
+			if (dup2(slave, STDERR_FILENO) == -1) {
+				PERROR("dup2");
+				err = 1;
+				goto cleanup;
+			}
 		}
-		slave = -1;
 	}
 
  cleanup:
@@ -1034,7 +1064,7 @@ static int set_capabilities(json_t * process)
 
 static void exec_container_process(json_t * config, int *socket, int *exec_fd)
 {
-	json_t *process;
+	json_t *process, *console;
 
 	process = json_object_get(config, "process");
 	if (!process) {
@@ -1042,12 +1072,14 @@ static void exec_container_process(json_t * config, int *socket, int *exec_fd)
 		exit(0);
 	}
 
-	exec_process(process, 1, socket, exec_fd);
+	console = json_object_get(config, "console");
+	exec_process(process, console
+		     && json_boolean_value(console), 1, socket, exec_fd);
 	return;
 }
 
-static void exec_process(json_t * process, int dup_stdin, int *socket,
-			 int *exec_fd)
+static void exec_process(json_t * process, int console, int dup_stdin,
+			 int *socket, int *exec_fd)
 {
 	char *path = NULL;
 	char **argv = NULL, **env = NULL;
@@ -1060,7 +1092,7 @@ static void exec_process(json_t * process, int dup_stdin, int *socket,
 		exit(0);
 	}
 
-	if (set_terminal(process, dup_stdin, socket)) {
+	if (set_terminal(process, console, dup_stdin, socket)) {
 		goto cleanup;
 	}
 
@@ -1343,7 +1375,7 @@ static int run_hooks(json_t * config, const char *name, pid_t cpid)
 				pipe_fd[0] = -1;
 			}
 
-			exec_process(hook, cpid == 0, &sockets[1], NULL);
+			exec_process(hook, 0, cpid == 0, &sockets[1], NULL);
 			err = 1;
 			goto cleanup;
 		}
@@ -1373,7 +1405,7 @@ static int run_hooks(json_t * config, const char *name, pid_t cpid)
 		}
 
 		if (master >= 0) {
-			if (splice_pseudoterminal_master(&master)) {
+			if (splice_pseudoterminal_master(&master, NULL)) {
 				err = 1;
 				goto cleanup;
 			}
@@ -2149,7 +2181,7 @@ static int close_pipe(int pipe_fd[])
 	return err;
 }
 
-static int sendfd(int socket, int *fd)
+static int sendfd(int socket, int *fd, int close_fd)
 {
 	struct cmsghdr *cmsg;
 	union {
@@ -2171,12 +2203,14 @@ static int sendfd(int socket, int *fd)
 		return 1;
 	}
 
-	if (close(*fd)) {
-		PERROR("close");
+	if (close_fd) {
+		if (close(*fd)) {
+			PERROR("close");
+			*fd = -1;
+			return 1;
+		}
 		*fd = -1;
-		return 1;
 	}
-	*fd = -1;
 
 	return 0;
 }
@@ -2208,7 +2242,7 @@ int recvfd(int socket, int *fd)
 	return 0;
 }
 
-static int splice_pseudoterminal_master(int *master)
+static int splice_pseudoterminal_master(int *master, int *slave)
 {
 	fd_set rfds, wfds, efds;
 	char in_buf[1024];
@@ -2226,6 +2260,12 @@ static int splice_pseudoterminal_master(int *master)
 
 		if (child_pid < 0) {	/* don't bother piping to a dead process */
 			in_open = in_len = 0;
+			if (slave && *slave >= 0) {	/* don't hold the slave open either */
+				if (close(*slave)) {
+					PERROR("close pseudoterminal slave");
+				}
+				*slave = -1;
+			}
 		}
 
 		if (in_open && in_len == 0) {	/* wait for new data */
@@ -2367,6 +2407,13 @@ static int splice_pseudoterminal_master(int *master)
 			PERROR("close pseudoterminal master");
 		}
 		*master = -1;
+	}
+
+	if (slave && *slave >= 0) {
+		if (close(*slave)) {
+			PERROR("close pseudoterminal slave");
+		}
+		*slave = -1;
 	}
 
 	return err;
