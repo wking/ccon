@@ -1080,7 +1080,9 @@ static int set_capabilities(json_t * process)
 
 static void exec_container_process(json_t * config, int *socket, int *exec_fd)
 {
-	json_t *process, *console;
+	json_t *process, *env, *value;
+	const char *env_var;
+	size_t path_len, i;
 
 	process = json_object_get(config, "process");
 	if (!process) {
@@ -1088,9 +1090,31 @@ static void exec_container_process(json_t * config, int *socket, int *exec_fd)
 		exit(0);
 	}
 
-	console = json_object_get(config, "console");
-	exec_process(process, console
-		     && json_boolean_value(console), 1, socket, exec_fd);
+	if (!exec_fd || *exec_fd < 0) {
+		env = json_object_get(process, "env");
+		if (env) {
+			path_len = strlen("PATH=");
+			json_array_foreach(env, i, value) {
+				env_var = json_string_value(value);
+				if (!env_var) {
+					LOG("failed to extract process.capabilities[%d]\n", (int)i);
+					return;
+				}
+				if (strncmp("PATH=", env_var, path_len) == 0) {
+					if (setenv
+					    ("PATH", env_var + path_len, 1)) {
+						PERROR("setenv");
+						return;
+					}
+					break;
+				}
+			}
+		}
+	}
+
+	value = json_object_get(config, "console");
+	exec_process(process, value
+		     && json_boolean_value(value), 1, socket, exec_fd);
 	return;
 }
 
