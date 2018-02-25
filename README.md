@@ -2,11 +2,11 @@
 
 A single binary to handle basic container creation.  The goal is to
 produce a lightweight tool in C that can serve as a test-bed for [Open
-Container Specification][ocs] development.  Ccon is thin wrapper
-around the underlying syscalls and kernel primitives.  It makes it
-easy to apply a given configuration, but does not have an opinion
-about what a container should look like (it's even less opinionated
-than [LXC][lxc.container.conf.5]).
+Container Intiative Runtime Specification][runtime-spec] development.
+Ccon is thin wrapper around the underlying syscalls and kernel
+primitives.  It makes it easy to apply a given configuration, but does
+not have an opinion about what a container should look like (it's even
+less opinionated than [LXC][lxc.container.conf.5]).
 
 ## Table of contents
 
@@ -85,12 +85,12 @@ namespace.
 
 ## Configuration
 
-Ccon is similar to an [Open Container Specification][ocs] runtime in
-that it reads a configuration file named `config.json` from its
-current working directory.  However the JSON content is a bit
-different to highlight how the components relate to each-other on
-Linux.  For example, setting per-container mounts requires a mount
-namespace, so ccon's mount listing falls under
+Ccon is similar to an [Open Container Iniative Runtime
+Specification][runtime-spec] runtime in that it reads a configuration
+file named `config.json` from its current working directory.  However
+the JSON content is a bit different to highlight how the components
+relate to each-other on Linux.  For example, setting per-container
+mounts requires a mount namespace, so ccon's mount listing falls under
 **`namespaces.mount.mounts`**.  There's an example in
 [`config.json`](config.json) that unprivileged users should be able to
 use to launch an interactive [BusyBox][] shell in new namespaces (you
@@ -776,7 +776,7 @@ Ccon is pretty easy to compile, but to use the stock
 Because all the dependencies are [GPL-compatible][], ccon binaries can
 be distributed under the GPLv3+.
 
-[ocs]: https://github.com/opencontainers/specs
+[runtime-spec]: https://github.com/opencontainers/runtime-spec
 
 [bash]: https://www.gnu.org/software/bash/
 [bash-process-substitution]: https://www.gnu.org/software/bash/manual/html_node/Process-Substitution.html
