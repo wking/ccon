@@ -28,24 +28,30 @@ digit.  The first digit classifies the test:
 
 2 - Namespace-configuration compliance.
 
+3 - Interactions with related tools (like
+    [`ccon-cli`](../README.md#socket-communication)).
+
 ## Dependencies
 
-* A [POSIX shell][sh.1] for `sh`.
+* A [POSIX shell][sh.1] for `sh` and [`wait`][wait.1].
 * [GNU Core Utilities][coreutils] for [`cat`][cat.1], [`echo`][echo.1],
-  [`env`][env.1], [`head`][head.1], [`id`][id.1], [`pwd`][pwd.1],
-  [`readlink`][readlink.1], [`touch`][touch.1], [`test`][test.1], and
+  [`env`][env.1], [`head`][head.1], [`id`][id.1], [`printf`][printf.1],
+  [`pwd`][pwd.1], [`readlink`][readlink.1], [`sleep`][sleep.1],
+  [`touch`][touch.1], [`test`][test.1], [`timeout`][timeout.1], and
   [`tty`][tty.1].
 * [Grep][] for [`grep`][grep.1].
 * [net-tools][] for [`hostname`][hostname.1].
 * [Sed][] for [`sed`][sed.1].
 * [BusyBox][] for `busybox`.
 * [iproute2][] for [`ip`][ip.8].
+* [inotify-tools][] for [`inotifywait.1`][inotifywait.1].
 * [libcap-ng][] for [`captest`][captest.8].
 
 [BusyBox]: http://www.busybox.net/
 [coreutils]: http://www.gnu.org/software/coreutils/coreutils.html
 [Grep]: https://www.gnu.org/software/grep/
 [iproute2]: http://www.linuxfoundation.org/collaborate/workgroups/networking/iproute2
+[inotify-tools]: https://github.com/rvoicilas/inotify-tools/wiki
 [libcap-ng]: http://people.redhat.com/sgrubb/libcap-ng/
 [net-tools]: http://net-tools.sourceforge.net/
 [prove]: http://perldoc.perl.org/prove.html
@@ -60,12 +66,17 @@ digit.  The first digit classifies the test:
 [head.1]: http://pubs.opengroup.org/onlinepubs/9699919799/utilities/head.html
 [hostname.1]: http://man7.org/linux/man-pages/man1/hostname.1.html
 [id.1]: http://pubs.opengroup.org/onlinepubs/9699919799/utilities/id.html
+[inotifywait.1]: http://man7.org/linux/man-pages/man1/inotifywait.1.html
+[printf.1]: http://pubs.opengroup.org/onlinepubs/9699919799/utilities/printf.html
 [pwd.1]: http://pubs.opengroup.org/onlinepubs/9699919799/utilities/pwd.html
 [sed.1]: http://pubs.opengroup.org/onlinepubs/9699919799/utilities/sed.html
 [sh.1]: http://pubs.opengroup.org/onlinepubs/9699919799/utilities/sh.html
+[sleep.1]: http://pubs.opengroup.org/onlinepubs/9699919799/utilities/sleep.html
 [readlink.1]: http://man7.org/linux/man-pages/man1/readlink.1.html
 [test.1]: http://pubs.opengroup.org/onlinepubs/9699919799/utilities/test.html
+[timeout.1]: http://man7.org/linux/man-pages/man1/timeout.1.html
 [touch.1]: http://pubs.opengroup.org/onlinepubs/9699919799/utilities/touch.html
 [tty.1]: http://pubs.opengroup.org/onlinepubs/9699919799/utilities/tty.html
+[wait.1]: http://pubs.opengroup.org/onlinepubs/9699919799/utilities/wait.html
 [captest.8]: https://fedorahosted.org/libcap-ng/browser/trunk/utils/captest.8
 [ip.8]: https://git.kernel.org/cgit/linux/kernel/git/shemminger/iproute2.git/tree/man/man8/ip.8?id=v4.2.0

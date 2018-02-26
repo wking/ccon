@@ -2,15 +2,19 @@
 
 A single binary to handle basic container creation.  The goal is to
 produce a lightweight tool in C that can serve as a test-bed for [Open
-Container Specification][ocs] development.  Ccon is thin wrapper
-around the underlying syscalls and kernel primitives.  It makes it
-easy to apply a given configuration, but does not have an opinion
-about what a container should look like (it's even less opinionated
-than [LXC][lxc.container.conf.5]).
+Container Intiative Runtime Specification][runtime-spec] development.
+Ccon is thin wrapper around the underlying syscalls and kernel
+primitives.  It makes it easy to apply a given configuration, but does
+not have an opinion about what a container should look like (it's even
+less opinionated than [LXC][lxc.container.conf.5]).
 
 ## Table of contents
 
 * [Lifecycle](#lifecycle)
+* [Socket communication](#socket-communication)
+  * [Getting the container process's
+    PID](#getting-the-container-processs-pid)
+  * [Start request](#start-request)
 * [Configuration](#configuration)
   * [Version](#version)
   * [Namespaces](#namespaces)
@@ -20,6 +24,7 @@ than [LXC][lxc.container.conf.5]).
     * [Network namespace](#network-namespace)
     * [IPC namespace](#ipc-namespace)
     * [UTS namespace](#uts-namespace)
+  * [Console](#console)
   * [Process](#process)
     * [Terminal](#terminal)
     * [User](#user)
@@ -58,9 +63,14 @@ synchronize the container setup.  Here's an outline of the lifecycle:
 |                                  | mounts filesystems            |
 |                                  | ← sends namespaces-complete   |
 | runs pre-start hooks             | blocks on exec-message        |
-| sends exec-message →             |                               |
-|                                  | opens the local ptmx          |
+| binds to socket path             |                               |
+| sends connection socket →        |                               |
+| blocks on exec-process message   | listens for process JSON      |
+|                                  | ← sends exec-process message  |
+| removes socket path              | opens the local ptmx          |
 |                                  | ← sends pseudoterminal master |
+|                                  | bind mounts `/dev/console`    |
+|                                  | ← sends pseudoterminal slave  |
 | waits on child death             | executes user process         |
 |   splicing standard streams      | …                             |
 |   onto the pseduoterminal master |                               |
@@ -83,24 +93,90 @@ use [`nsenter`][nsenter.1] or a wrapping ccon invocation to join those
 namespaces before the main ccon invocation creates the new mount
 namespace.
 
+## Socket communication
+
+With `--socket=PATH`, ccon will bind a [`SOCK_SEQPACKET` Unix
+socket][unix.7] to `PATH`.  This path is created after namespace-setup
+completes, so users can use its presence as a trigger for further
+configuration (e.g. network setup) before [starting](#start-request)
+the [user-specified code](#process).  The path is removed after a
+[start request](#start-request) is received or after the container
+process exits, whichever comes first.
+
+The [`ccon-cli`](ccon-cli.c) program distributed with this repository
+is one client for the ccon socket.
+
+### Getting the container process's PID
+
+An [`SO_PEERCRED`][socket.7] request will return the container
+process's PID [in the receiving process's PID
+namespace][pid_namespaces.7].  The client can use this to look up the
+container process in their local [`/proc`][proc.5].  This request may
+be performed as many times as you like.
+
+### Start request
+
+The request is a single [`struct iovec`][recv.2] containing either a
+leading null byte or process JSON.  Sending a single null-byte message
+will trigger the [**`process`**](#process) field present in the
+original configuration, while non-empty strings will completely
+override that field.
+
+The response is a single [`struct iovec`][recv.2] containing either a
+single null-byte message (for success) or an error message encoded in
+[ASCII][ascii.7] ([RFC 1345][rfc1345.s5]).  In this context, “success”
+means “successfully received the start request”, because the container
+process sends the response before actually executing the
+[user-specified code](#process).
+
+If you set [**`host`**](#host) in your process JSON, `ccon-cli` will
+open the referenced path and pass the open file descriptor to the
+container over the Unix socket.
+
+### Example
+
+In one shell, launch ccon and have it listen on a socket at
+`/tmp/ccon-sock`:
+
+```
+$ ccon --socket /tmp/ccon-sock
+```
+
+In a second shell, get the container process's PID, but don't trigger
+the user-specified code:
+
+```
+$ PID=$(ccon-cli --socket /tmp/ccon-sock --pid)
+$ echo "${PID}"
+2186
+```
+
+You can then perform additional configuration using that PID:
+
+```
+$ ip link set ccon-ex-veth1 netns "${PID}"
+```
+
+And when you're finished setting up the environment, you can trigger
+the [user-specified code](#process):
+
+```
+$ ccon-cli  --socket /tmp/ccon-sock --config-string '{"args": ["busybox", "sh"]}'
+```
+
 ## Configuration
 
-Ccon is similar to an [Open Container Specification][ocs] runtime in
-that it reads a configuration file named `config.json` from its
-current working directory.  However the JSON content is a bit
-different to highlight how the components relate to each-other on
-Linux.  For example, setting per-container mounts requires a mount
-namespace, so ccon's mount listing falls under
+Ccon is similar to an [Open Container Iniative Runtime
+Specification][runtime-spec] runtime in that it reads a configuration
+file named `config.json` from its current working directory.  However
+the JSON content is a bit different to highlight how the components
+relate to each-other on Linux.  For example, setting per-container
+mounts requires a mount namespace, so ccon's mount listing falls under
 **`namespaces.mount.mounts`**.  There's an example in
 [`config.json`](config.json) that unprivileged users should be able to
 use to launch an interactive [BusyBox][] shell in new namespaces (you
 may need to adjust the **`hostID`** entries to match `id -u` and `id
 -g`).
-
-If you want to use ccon to launch OCI bundles, you can use the
-[ccon-oci](ccon-oci) wrapper ([example](examples/good/oci/0.1.0)),
-which supports the [Open Container Specification][ocs] and the
-[runtime command-line API][oci-cli].
 
 You can load the configuration from a different file by giving its
 path with the `--config` option.  For example:
@@ -264,7 +340,9 @@ processes inside a user namespace.
 
 If they don't start with a slash, **`source`** and **`target`** are
 interpreted as paths relative to ccon's [current working
-directory][getcwd.3].
+directory][getcwd.3].  If **`target`** does not exist, ccon will
+attempt to create it by calling [`mkdir`][mkdir.3p], making multiple
+calls if necessary.
 
 In addition to the usual types supported by [`mount`][mount.2], ccon
 supports a `pivot-root` **`type`** that invokes the
@@ -375,6 +453,28 @@ for [`sethostname`][gethostname.2].
   * **`path`** (optional, string) the absolute path to a UTS namespace
     which the container process should join.
 
+### Console
+
+* **`console`** (optional, boolean) if true, the container process
+  will [open its local `/dev/ptmx`][pts.4] (e.g. with
+  [`posix_openpt`][posix_openpt.3p]), grant access to the slave with
+  [`grantpt`][grantpt.3p], [bind `mount`][mount.2] the pseudoterminal
+  slave to `/dev/console`, and send both the pseudoterminal master and
+  slave back to the host process.  The host process will continually
+  copy its [standard input][stdin.3] to that pseudoterminal master and
+  the pseudoterminal master to its [standard output][stdin.3].  If
+  [**`process.terminal`**](#terminal) is also true, the same
+  pseudoterminal will be used for both `/dev/console` and the
+  container process's [standard streams][stdin.3].
+
+Some applications (including [systemd][systemd-container-interface])
+require a TTY at `/dev/console`.  This setting allows you to provide
+that console without [`dup`][dup.2]ing over the container process's
+standard streams.
+
+For more details on why using the container's `/dev/ptmx` is
+important, see the [**`process.terminal`** documentation](#terminal).
+
 ### Process
 
 After the container setup is finished, the container process can
@@ -412,7 +512,7 @@ the user's control-C into [`SIGINT`][signal.7] for the container.
 Containers that do not [pivot root](#mount-namespace) or who otherwise
 keep access to the host [ptmx][pts.4] can create such a pseudoterminal
 by calling opening the [ptmx][pts.4] (e.g. with
-[`posix_openpt`][posix_openpt.3]).
+[`posix_openpt`][posix_openpt.3p]).
 
 Containers that are pivoting to a new root and mounting their
 [devpts][] with [newinstance][mount.8] will want to ensure that the
@@ -420,13 +520,25 @@ pseudoterminal is created using a devpts instance that will be
 accessible after the pivot, and there are [a number of issues to
 consider][devpts].
 
-* **`terminal`** (optional, boolean) if true, the process will [open
-  its local `/dev/ptmx`][pts.4] (e.g. with
-  [`posix_openpt`][posix_openpt.3]), [`dup`][dup.2] the pseudoterminal
-  slave over its standard streams, and send the pseudoterminal master
-  back to the host process.  The host process will continually copy
-  its [standard input][stdin.3] to that pseudoterminal master and the
-  pseudoterminal master to its [standard output][stdin.3].
+* **`terminal`** (optional, boolean) if true, the process will
+  [open its local `/dev/ptmx`][pts.4] (e.g. with
+  [`posix_openpt`][posix_openpt.3p]), grant access to the slave with
+  [`grantpt`][grantpt.3p], [`dup`][dup.2] the pseudoterminal slave over
+  its standard streams, and send the pseudoterminal master back to the
+  host process.  The host process will continually copy its
+  [standard input][stdin.3] to that pseudoterminal master and the
+  pseudoterminal master to its [standard output][stdin.3].  If
+  [**`console`**](#console) is also true, the same pseudoterminal will
+  be used for both `/dev/console` and the container process's standard
+  streams.
+
+Before [77356912][glibc-77356912] (included in version 2.23, released
+2016-02-19), [glibc][]'s [`grantpt`][grantpt.3p] was more agressive
+about changing the pseudterminal slave's group, which [could fail for
+unprivileged users][glibc-bug-19347].  Unprivileged users linking
+older versions of glibc can work around the old behavior by ensuring
+`tty` is not defined in the `/etc/group` visible from the container's
+mount namespace.
 
 ##### Example
 
@@ -770,15 +882,16 @@ Ccon is pretty easy to compile, but to use the stock
 Because all the dependencies are [GPL-compatible][], ccon binaries can
 be distributed under the GPLv3+.
 
-[ocs]: https://github.com/opencontainers/specs
-[oci-cli]: https://github.com/wking/oci-command-line-api
+[runtime-spec]: https://github.com/opencontainers/runtime-spec
 
 [bash]: https://www.gnu.org/software/bash/
 [bash-process-substitution]: https://www.gnu.org/software/bash/manual/html_node/Process-Substitution.html
 [BusyBox]: http://www.busybox.net/
 [GCC]: http://gcc.gnu.org/
-[glibc-license]: https://sourceware.org/git/?p=glibc.git;a=blob;f=COPYING.LIB;hb=glibc-2.22
 [glibc]: https://www.gnu.org/software/libc/
+[glibc-license]: https://sourceware.org/git/?p=glibc.git;a=blob;f=COPYING.LIB;hb=glibc-2.22
+[glibc-77356912]: https://sourceware.org/git/?p=glibc.git;a=commit;h=77356912e83601fd0240d22fe4d960348b82b5c3
+[glibc-bug-19347]: https://sourceware.org/bugzilla/show_bug.cgi?id=19347
 [indent]: https://www.gnu.org/software/indent/
 [Jansson]: http://www.digip.org/jansson/
 [jansson-license]: https://github.com/akheron/jansson/blob/v2.7/LICENSE
@@ -789,6 +902,7 @@ be distributed under the GPLv3+.
 [Nginx]: http://nginx.org/
 [pkg-config]: http://www.freedesktop.org/wiki/Software/pkg-config/
 [semver]: http://semver.org/spec/v2.0.0.html
+[systemd-container-interface]: https://www.freedesktop.org/wiki/Software/systemd/ContainerInterface/
 
 [GPL-compatible]: https://www.gnu.org/licenses/license-list.html#GPLCompatibleLicenses
 [mit]: https://www.gnu.org/licenses/license-list.html#Expat
@@ -822,19 +936,25 @@ be distributed under the GPLv3+.
 [setgid.2]: http://man7.org/linux/man-pages/man2/setgid.2.html
 [setuid.2]: http://man7.org/linux/man-pages/man2/setuid.2.html
 [syscall.2]: http://man7.org/linux/man-pages/man2/syscall.2.html
+[recv.2]: http://man7.org/linux/man-pages/man2/recv.2.html
 [environ.3p]: https://www.kernel.org/pub/linux/docs/man-pages/man-pages-posix/
 [exec.3]: http://man7.org/linux/man-pages/man3/exec.3.html
 [getcwd.3]: http://man7.org/linux/man-pages/man3/getcwd.3.html
-[posix_openpt.3]: http://man7.org/linux/man-pages/man3/posix_openpt.3.html
+[grantpt.3p]: http://pubs.opengroup.org/onlinepubs/9699919799/functions/grantpt.html
+[mkdir.3p]: http://pubs.opengroup.org/onlinepubs/9699919799/functions/mkdir.html
+[posix_openpt.3p]: http://pubs.opengroup.org/onlinepubs/9699919799/functions/posix_openpt.html
 [stdin.3]: http://man7.org/linux/man-pages/man3/stdin.3.html
 [pts.4]: http://man7.org/linux/man-pages/man4/pty.4.html
 [filesystems.5]: http://man7.org/linux/man-pages/man5/filesystems.5.html
 [lxc.container.conf.5]: https://linuxcontainers.org/lxc/manpages/man5/lxc.container.conf.5.html
+[proc.5]: https://linuxcontainers.org/lxc/manpages/man5/proc.5.html
+[ascii.7]: http://man7.org/linux/man-pages/man7/ascii.7.html
 [capabilities.7]: http://man7.org/linux/man-pages/man7/capabilities.7.html
 [namespaces.7]: http://man7.org/linux/man-pages/man7/namespaces.7.html
 [pid_namespaces.7]: http://man7.org/linux/man-pages/man7/pid_namespaces.7.html
 [pty.7]: http://man7.org/linux/man-pages/man7/pty.7.html
 [signal.7]: http://man7.org/linux/man-pages/man7/signal.7.html
+[socket.7]: http://man7.org/linux/man-pages/man7/socket.7.html
 [unix.7]: http://man7.org/linux/man-pages/man7/unix.7.html
 [user_namespaces.7]: http://man7.org/linux/man-pages/man7/user_namespaces.7.html
 [mount.8]: http://man7.org/linux/man-pages/man8/pty.8.html
@@ -843,4 +963,5 @@ be distributed under the GPLv3+.
 [cgroups]: https://www.kernel.org/doc/Documentation/cgroup-v1/cgroups.txt
 [cgroups-unified]: https://www.kernel.org/doc/Documentation/cgroup-v2.txt
 [devpts]: https://www.kernel.org/doc/Documentation/filesystems/devpts.txt
+[rfc1345.s5]: https://tools.ietf.org/html/rfc1345#section-5
 [sd_listen_fds]: http://www.freedesktop.org/software/systemd/man/sd_listen_fds.html

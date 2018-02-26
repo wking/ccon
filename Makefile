@@ -6,16 +6,16 @@ LDLIBS := $(shell pkg-config --libs-only-l jansson libcap-ng)
 .PHONY: all clean fmt
 .PRECIOUS: %.o
 
-all: ccon
+all: ccon ccon-cli
 
 %.o: %.c
 	$(CC) $(CFLAGS) -c -o "$@" "$<"
 
-ccon: %: %.o
-	$(CC) $(LDFLAGS) -o "$@" "$<" $(LDLIBS) 
+ccon ccon-cli: %: %.o libccon.o
+	$(CC) $(LDFLAGS) -o "$@" $^ $(LDLIBS)
 
 clean:
-	rm -f *.o ccon
+	rm -f *.o ccon ccon-cli
 
 fmt:
-	indent --ignore-profile --linux-style *.c
+	indent --ignore-profile --linux-style *.h *.c

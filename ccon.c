@@ -40,15 +40,16 @@
 
 #include <cap-ng.h>
 #include <jansson.h>
+#include "libccon.h"
 
 #define STACK_SIZE (1024 * 1024)
-#define MAX_PATH 1024
 
 /* messages passed between the host and container */
 #define MESSAGE_SIZE 80
 #define USER_NAMESPACE_MAPPING_COMPLETE "user-namespace-mapping-complete"
 #define CONTAINER_SETUP_COMPLETE "container-setup-complete"
 #define EXEC_PROCESS "exec-process"
+#define CONNECTION_SOCKET "connection-socket"
 
 #ifndef execveat
 static int execveat(int fd, const char *path, char **argv, char **envp,
@@ -76,35 +77,33 @@ extern char **environ;
 static pid_t child_pid;
 static pid_t hook_pid;
 
-/* logging */
-static int verbose;
-#define LOG(...) do {if (verbose) {fprintf(stderr, __VA_ARGS__);}} while(0)
-#define PERROR(...) do {if (verbose) {perror(__VA_ARGS__);}} while(0)
-
 static int parse_args(int argc, char **argv, const char **config_path,
-		      const char **config_string);
+		      const char **config_string, const char **socket_path);
 static void usage(FILE * stream, char *path);
 static void version();
 static void kill_child(int signum, siginfo_t * siginfo, void *unused);
 static void reap_child(int signum, siginfo_t * siginfo, void *unused);
 static int validate_config(json_t * config);
 static int validate_version(const char *version);
-static int run_container(json_t * config);
-static int handle_parent(json_t * config, pid_t cpid, int *socket);
+static int run_container(json_t * config, const char *socket_path);
+static int handle_parent(json_t * config, const char *socket_path, pid_t cpid,
+			 int *socket);
 static int child_func(void *arg);
 static int handle_child(json_t * config, int *socket, int *exec_fd,
 			namespace_fd_t ** namespace_fds);
-static int set_terminal(json_t * process, int dup_stdin, int *socket);
+static int set_path(char **env);
+static int set_terminal(json_t * process, int console, int dup_stdin,
+			int *socket);
 static int set_working_directory(json_t * process);
 static int set_user_group(json_t * process);
 static int _capng_name_to_capability(const char *name);
 static int set_capabilities(json_t * process);
-static void exec_container_process(json_t * config, int *socket, int *exec_fd);
-static void exec_process(json_t * process, int dup_stdin, int *socket,
-			 int *exec_fd);
-static int get_host_exec_fd(json_t * config, int *exec_fd);
+static void exec_process(json_t * process, int console, int dup_stdin,
+			 int process_env_path, int *socket, int *exec_fd);
 static int get_namespace_fds(json_t * config, namespace_fd_t ** namespace_fds);
 static int run_hooks(json_t * config, const char *name, pid_t cpid);
+static int setup_socket(const char *path, int *container_socket);
+static int serve_socket(json_t * process, int console, int *socket);
 static int get_namespace_type(const char *name, int *nstype);
 static int get_clone_flags(json_t * config, int *flags);
 static int join_namespaces(json_t * config, namespace_fd_t ** namespace_fds);
@@ -117,23 +116,22 @@ static int set_user_setgroups(json_t * user, pid_t cpid);
 static int get_mount_flag(const char *name, unsigned long *flag);
 static int handle_mounts(json_t * config);
 static int pivot_root_remove_old(const char *new_root);
-static int open_in_path(const char *name, int flags);
 static int _wait(pid_t pid, const char *name);
 static char **json_array_of_strings_value(json_t * array);
 static int close_pipe(int pipe_fd[]);
-static int sendfd(int socket, int *fd);
-static int recvfd(int socket, int *fd);
-static int splice_pseudoterminal_master(int *master);
+static int splice_pseudoterminal_master(int *master, int *slave);
+static int mkdir_all(const char *path, mode_t mode);
 
 int main(int argc, char **argv)
 {
 	const char *config_path = "config.json";
 	const char *config_string = NULL;
+	const char *socket_path = NULL;
 	int err;
 	json_t *config;
 	json_error_t error;
 
-	if (parse_args(argc, argv, &config_path, &config_string)) {
+	if (parse_args(argc, argv, &config_path, &config_string, &socket_path)) {
 		return 1;
 	}
 
@@ -156,7 +154,7 @@ int main(int argc, char **argv)
 		goto cleanup;
 	}
 
-	err = run_container(config);
+	err = run_container(config, socket_path);
 
  cleanup:
 	if (config) {
@@ -167,7 +165,7 @@ int main(int argc, char **argv)
 }
 
 static int parse_args(int argc, char **argv, const char **config_path,
-		      const char **config_string)
+		      const char **config_string, const char **socket_path)
 {
 	int c, option_index;
 	static struct option long_options[] = {
@@ -176,12 +174,13 @@ static int parse_args(int argc, char **argv, const char **config_path,
 		{"version", no_argument, NULL, 'v'},
 		{"config", required_argument, NULL, 'c'},
 		{"config-string", required_argument, NULL, 's'},
-		{},
+		{"socket", required_argument, NULL, 'S'},
+		{NULL},
 	};
 
 	while (1) {
 		option_index = 0;
-		c = getopt_long(argc, argv, "hVvc:s:", long_options,
+		c = getopt_long(argc, argv, "hVvc:s:S:", long_options,
 				&option_index);
 		if (c == -1) {
 			break;
@@ -204,6 +203,9 @@ static int parse_args(int argc, char **argv, const char **config_path,
 		case 's':
 			*config_string = optarg;
 			break;
+		case 'S':
+			*socket_path = optarg;
+			break;
 		default:	/* '?' */
 			usage(stderr, argv[0]);
 			exit(1);
@@ -225,6 +227,8 @@ static void usage(FILE * stream, char *path)
 		"  -c, --config=PATH\tOverride config.json with an alternate path\n");
 	fprintf(stream,
 		"  -s, --config-string=JSON\tSpecify config JSON on the command line, overriding --config and its PATH\n");
+	fprintf(stream,
+		"  -S, --socket=PATH\tSpecify a socket path for container PID and start requests\n");
 }
 
 static void version()
@@ -320,6 +324,7 @@ static int validate_config(json_t * config)
 	        "s?s,"	/* "path": "/proc/123/ns/uts */
 	      "},"	/* }  (uts) */
 	    "},"	/* }  (namespaces) */
+	    "s?b,"	/* "console": { */
 	    "s?{"	/* "process": { */
 	      "s?b,"	/* "terminal": true */
 	      "s?{"	/* "user": { */
@@ -357,6 +362,7 @@ static int validate_config(json_t * config)
 	      "path",
 	    "uts",
 	      "path",
+	  "console",
 	  "process",
 	    "terminal",
 	    "user",
@@ -410,8 +416,9 @@ static int validate_version(const char *version)
 	return 1;
 }
 
-static int run_container(json_t * config)
+static int run_container(json_t * config, const char *socket_path)
 {
+	json_t *process;
 	struct sigaction act;
 	child_func_args_t child_args;
 	char *stack = NULL, *stack_top;
@@ -437,9 +444,12 @@ static int run_container(json_t * config)
 	child_args.config = config;
 	child_args.socket = sockets[1];
 
-	if (get_host_exec_fd(config, &child_args.exec_fd)) {
-		err = 1;
-		goto cleanup;
+	process = json_object_get(config, "process");
+	if (process) {
+		if (get_host_exec_fd(process, &child_args.exec_fd) == -1) {
+			err = 1;
+			goto cleanup;
+		}
 	}
 
 	if (get_namespace_fds(config, &child_args.namespace_fds)) {
@@ -515,7 +525,7 @@ static int run_container(json_t * config)
 		child_args.namespace_fds = NULL;
 	}
 
-	err = handle_parent(config, cpid, &sockets[0]);
+	err = handle_parent(config, socket_path, cpid, &sockets[0]);
 
  cleanup:
 	cpid = child_pid;
@@ -552,15 +562,16 @@ static int run_container(json_t * config)
 	return err;
 }
 
-static int handle_parent(json_t * config, pid_t cpid, int *socket)
+static int handle_parent(json_t * config, const char *socket_path, pid_t cpid,
+			 int *socket)
 {
-	json_t *process, *terminal = NULL;
+	json_t *process, *console = NULL, *terminal = NULL;
 	char buf[MESSAGE_SIZE];
 	struct iovec iov;
 	struct msghdr msg = { NULL, 0, &iov, 1, NULL, 0, 0 };
 	size_t len;
 	ssize_t n;
-	int master = -1, err = 0, exit = 0;
+	int master = -1, slave = -1, err = 0, exit = 0;
 
 	if (set_user_namespace_mappings(config, cpid)) {
 		err = 1;
@@ -603,25 +614,40 @@ static int handle_parent(json_t * config, pid_t cpid, int *socket)
 		goto wait;
 	}
 
-	iov.iov_base = (void *)EXEC_PROCESS;
-	iov.iov_len = strlen(iov.iov_base);
-	n = sendmsg(*socket, &msg, 0);
-	if (n == -1) {
-		PERROR("sendmsg");
-		err = 1;
-		goto wait;
-	} else if (n != iov.iov_len) {
-		LOG("did not send the expected number of bytes: %d != %d\n",
-		    (int)n, (int)iov.iov_len);
-		err = 1;
-		goto wait;
+	if (socket_path) {
+		if (setup_socket(socket_path, socket)) {
+			err = 1;
+			goto wait;
+		}
+	} else {
+		iov.iov_base = (void *)EXEC_PROCESS;
+		iov.iov_len = strlen(iov.iov_base);
+		n = sendmsg(*socket, &msg, 0);
+		if (n == -1) {
+			PERROR("sendmsg");
+			err = 1;
+			goto wait;
+		} else if (n != iov.iov_len) {
+			LOG("did not send the expected number of bytes: %d != %d\n", (int)n, (int)iov.iov_len);
+			err = 1;
+			goto wait;
+		}
 	}
 
+	console = json_object_get(config, "console");
 	process = json_object_get(config, "process");
 	if (process) {
 		terminal = json_object_get(process, "terminal");
-		if (json_boolean_value(terminal)) {
+		if (json_boolean_value(terminal)
+		    || (console && json_boolean_value(console))) {
 			if (recvfd(*socket, &master)) {
+				err = 1;
+				goto wait;
+			}
+		}
+
+		if (console && json_boolean_value(console)) {
+			if (recvfd(*socket, &slave)) {
 				err = 1;
 				goto wait;
 			}
@@ -642,7 +668,7 @@ static int handle_parent(json_t * config, pid_t cpid, int *socket)
 	*socket = -1;
 
 	if (!err && master >= 0) {
-		if (splice_pseudoterminal_master(&master)) {
+		if (splice_pseudoterminal_master(&master, &slave)) {
 			err = 1;
 			kill_child(0, NULL, NULL);
 		}
@@ -651,6 +677,14 @@ static int handle_parent(json_t * config, pid_t cpid, int *socket)
 	if (master >= 0) {
 		if (close(master) == -1) {
 			PERROR("close pseudoterminal master");
+			err = 1;
+			kill_child(0, NULL, NULL);
+		}
+	}
+
+	if (slave >= 0) {
+		if (close(slave) == -1) {
+			PERROR("close pseudoterminal slave");
 			err = 1;
 			kill_child(0, NULL, NULL);
 		}
@@ -716,10 +750,11 @@ static int child_func(void *arg)
 static int handle_child(json_t * config, int *socket, int *exec_fd,
 			namespace_fd_t ** namespace_fds)
 {
+	json_t *console, *process;
 	char buf[MESSAGE_SIZE];
 	struct iovec iov = { buf, MESSAGE_SIZE };
 	struct msghdr msg = { NULL, 0, &iov, 1, NULL, 0, 0 };
-	size_t len;
+	size_t len, len2;
 	ssize_t n;
 
 	n = recvmsg(*socket, &msg, 0);
@@ -755,6 +790,9 @@ static int handle_child(json_t * config, int *socket, int *exec_fd,
 		return 1;
 	}
 
+	console = json_object_get(config, "console");
+	process = json_object_get(config, "process");
+
 	/* block while parent runs pre-start hooks */
 
 	iov.iov_base = (char *)buf;
@@ -765,29 +803,58 @@ static int handle_child(json_t * config, int *socket, int *exec_fd,
 		return 1;
 	}
 	len = strlen(EXEC_PROCESS);
-	if (len != n || strncmp(EXEC_PROCESS, iov.iov_base, len) != 0) {
+	len2 = strlen(CONNECTION_SOCKET);
+	if (len == n && strncmp(EXEC_PROCESS, iov.iov_base, len) == 0) {
+		if (!process) {
+			LOG("process not defined, exiting\n");
+			return 0;
+		}
+		exec_process(process, console
+			     && json_boolean_value(console), 1, 1, socket,
+			     exec_fd);
+	} else if (len2 == n
+		   && strncmp(CONNECTION_SOCKET, iov.iov_base, len2) == 0) {
+		serve_socket(process, console
+			     && json_boolean_value(console), socket);
+	} else {
 		LOG("unexpected message from host (%d): %.*s\n", (int)n, (int)n,
 		    (char *)iov.iov_base);
-		return 1;
 	}
-
-	exec_container_process(config, socket, exec_fd);
 
 	return 1;
 }
 
-static int set_terminal(json_t * process, int dup_stdin, int *socket)
+static int set_path(char **env)
+{
+	size_t path_len, i;
+
+	path_len = strlen("PATH=");
+	for (i = 0; env[i] != NULL; i++) {
+		if (strncmp("PATH=", env[i], path_len) == 0) {
+			if (setenv("PATH", env[i] + path_len, 1)) {
+				PERROR("setenv");
+				return 1;
+			}
+			break;
+		}
+	}
+
+	return 0;
+}
+
+static int set_terminal(json_t * process, int console, int dup_stdin,
+			int *socket)
 {
 	json_t *terminal;
 	char *slave_name;
 	int err = 0, master = -1, slave = -1;
 
 	terminal = json_object_get(process, "terminal");
-	if (!terminal) {
+	if (!terminal && !console) {
 		return 0;
 	}
 
-	if (json_boolean_value(terminal)) {
+	if (json_boolean_value(terminal) || console) {
 		if (socket == NULL) {
 			LOG("cannot create a pseudoterminal without a socket for master\n");
 			return 1;
@@ -831,51 +898,75 @@ static int set_terminal(json_t * process, int dup_stdin, int *socket)
 			goto cleanup;
 		}
 
-		if (sendfd(*socket, &master)) {
+		if (sendfd(*socket, &master, 1)) {
 			err = 1;
 			goto cleanup;
 		}
 
-		if (dup_stdin) {
-			if (dup2(slave, STDIN_FILENO) == -1) {
-				PERROR("dup2");
+		if (console) {
+			LOG("bind mount %s to /dev/console\n", slave_name);
+			if (mount
+			    (slave_name, "/dev/console", NULL, MS_BIND,
+			     NULL) == -1) {
+				PERROR("mount");
+				return 1;
+			}
+
+			if (sendfd(*socket, &slave, 0)) {
 				err = 1;
 				goto cleanup;
 			}
 		}
 
-		if (dup2(slave, STDOUT_FILENO) == -1) {
-			PERROR("dup2");
-			err = 1;
-			goto cleanup;
-		}
+		if (json_boolean_value(terminal)) {
+			if (dup_stdin) {
+				if (dup2(slave, STDIN_FILENO) == -1) {
+					PERROR("dup2");
+					err = 1;
+					goto cleanup;
+				}
+			}
 
-		if (dup2(slave, STDERR_FILENO) == -1) {
-			PERROR("dup2");
-			err = 1;
-			goto cleanup;
-		}
+			if (dup2(slave, STDOUT_FILENO) == -1) {
+				PERROR("dup2");
+				err = 1;
+				goto cleanup;
+			}
 
-		if (close(slave)) {
-			PERROR("closing pseudoterminal slave");
-			slave = -1;
-			err = 1;
-			goto cleanup;
+			if (log_fd == STDERR_FILENO) {
+				log_fd = dup(STDERR_FILENO);
+				if (log_fd == -1) {
+					log_fd = STDERR_FILENO;
+					PERROR("dup");
+					err = 1;
+					goto cleanup;
+				}
+			}
+
+			if (dup2(slave, STDERR_FILENO) == -1) {
+				PERROR("dup2");
+				err = 1;
+				goto cleanup;
+			}
 		}
-		slave = -1;
 	}
 
  cleanup:
 	if (master >= 0) {
 		if (close(master)) {
-			PERROR("closing pseudoterminal master");
+			PERROR("close pseudoterminal master");
 			err = 1;
 		}
 	}
 	if (slave >= 0) {
 		if (close(slave)) {
-			PERROR("closing pseudoterminal slave");
+			PERROR("close pseudoterminal slave");
 			err = 1;
+		}
+	}
+	if (err != 0 && log_fd >= 0 && log_fd != STDERR_FILENO) {
+		if (close(log_fd)) {
+			PERROR("close log file descriptor");
 		}
 	}
 	return err;
@@ -1031,22 +1122,8 @@ static int set_capabilities(json_t * process)
 	return 0;
 }
 
-static void exec_container_process(json_t * config, int *socket, int *exec_fd)
-{
-	json_t *process;
-
-	process = json_object_get(config, "process");
-	if (!process) {
-		LOG("process not defined, exiting\n");
-		exit(0);
-	}
-
-	exec_process(process, 1, socket, exec_fd);
-	return;
-}
-
-static void exec_process(json_t * process, int dup_stdin, int *socket,
-			 int *exec_fd)
+static void exec_process(json_t * process, int console, int dup_stdin,
+			 int process_env_path, int *socket, int *exec_fd)
 {
 	char *path = NULL;
 	char **argv = NULL, **env = NULL;
@@ -1059,7 +1136,7 @@ static void exec_process(json_t * process, int dup_stdin, int *socket,
 		exit(0);
 	}
 
-	if (set_terminal(process, dup_stdin, socket)) {
+	if (set_terminal(process, console, dup_stdin, socket)) {
 		goto cleanup;
 	}
 
@@ -1097,6 +1174,12 @@ static void exec_process(json_t * process, int dup_stdin, int *socket,
 			LOG("failed to extract env\n");
 			goto cleanup;
 		}
+
+		if (process_env_path) {
+			if (set_path(env)) {
+				goto cleanup;
+			}
+		}
 	} else {
 		env = environ;
 	}
@@ -1107,6 +1190,13 @@ static void exec_process(json_t * process, int dup_stdin, int *socket,
 			LOG(" %s", argv[i]);
 		}
 		LOG("\n");
+		if (log_fd != STDERR_FILENO) {
+			if (close(log_fd) == -1) {
+				PERROR("close log file descriptor");
+				goto cleanup;
+			}
+			log_fd = -1;
+		}
 		execveat(*exec_fd, "", argv, env, AT_EMPTY_PATH);
 		PERROR("execveat");
 		goto cleanup;
@@ -1121,22 +1211,24 @@ static void exec_process(json_t * process, int dup_stdin, int *socket,
 		}
 
 		LOG("execute [%s]:", path);
-		for (i = 0; argv[i]; i++) {
-			LOG(" %s", argv[i]);
-		}
-		LOG("\n");
-		execvpe(path, argv, env);
-		PERROR("execvpe");
 	} else {
-
+		path = argv[0];
 		LOG("execute:");
-		for (i = 0; argv[i]; i++) {
-			LOG(" %s", argv[i]);
-		}
-		LOG("\n");
-		execvpe(argv[0], argv, env);
-		PERROR("execvpe");
 	}
+	for (i = 0; argv[i]; i++) {
+		LOG(" %s", argv[i]);
+	}
+	LOG("\n");
+
+	if (log_fd != STDERR_FILENO) {
+		if (close(log_fd) == -1) {
+			PERROR("close log file descriptor");
+			goto cleanup;
+		}
+		log_fd = -1;
+	}
+	execvpe(path, argv, env);
+	PERROR("execvpe");
 
  cleanup:
 	if (argv) {
@@ -1155,55 +1247,6 @@ static void exec_process(json_t * process, int dup_stdin, int *socket,
 		free(path);
 	}
 	return;
-}
-
-static int get_host_exec_fd(json_t * config, int *exec_fd)
-{
-	json_t *process, *v1, *v2;
-	const char *arg0;
-
-	*exec_fd = -1;
-
-	process = json_object_get(config, "process");
-	if (!process) {
-		return 0;
-	}
-
-	v1 = json_object_get(process, "host");
-	if (!v1 || !json_boolean_value(v1)) {
-		return 0;
-	}
-
-	v1 = json_object_get(process, "path");
-	if (v1) {
-		arg0 = json_string_value(v1);
-		if (!arg0) {
-			LOG("failed to extract process.path\n");
-			return 1;
-		}
-	} else {
-		v1 = json_object_get(process, "args");
-		if (!v1) {
-			return 0;
-		}
-		v2 = json_array_get(v1, 0);
-		if (!v2) {
-			LOG("failed to extract process.args[0]\n");
-			return 1;
-		}
-		arg0 = json_string_value(v2);
-		if (!arg0) {
-			LOG("failed to extract process.args[0]\n");
-			return 1;
-		}
-	}
-
-	*exec_fd = open_in_path(arg0, O_PATH | O_CLOEXEC);
-	if (*exec_fd == -1) {
-		return 1;
-	}
-
-	return 0;
 }
 
 static int get_namespace_fds(json_t * config, namespace_fd_t ** namespace_fds)
@@ -1342,7 +1385,7 @@ static int run_hooks(json_t * config, const char *name, pid_t cpid)
 				pipe_fd[0] = -1;
 			}
 
-			exec_process(hook, cpid == 0, &sockets[1], NULL);
+			exec_process(hook, 0, cpid == 0, 0, &sockets[1], NULL);
 			err = 1;
 			goto cleanup;
 		}
@@ -1372,7 +1415,7 @@ static int run_hooks(json_t * config, const char *name, pid_t cpid)
 		}
 
 		if (master >= 0) {
-			if (splice_pseudoterminal_master(&master)) {
+			if (splice_pseudoterminal_master(&master, NULL)) {
 				err = 1;
 				goto cleanup;
 			}
@@ -1407,11 +1450,264 @@ static int run_hooks(json_t * config, const char *name, pid_t cpid)
 	}
 	if (master >= 0) {
 		if (close(master)) {
-			PERROR("closing pseudoterminal master");
+			PERROR("close pseudoterminal master");
 			err = 1;
 		}
 	}
 
+	return err;
+}
+
+static int setup_socket(const char *path, int *container_socket)
+{
+	char buf[MESSAGE_SIZE];
+	struct iovec iov = { buf, MESSAGE_SIZE };
+	struct msghdr msg = { NULL, 0, &iov, 1, NULL, 0, 0 };
+	struct sockaddr_un name;
+	size_t len;
+	ssize_t n;
+	int connection_socket = -1, err = 0;
+
+	connection_socket = socket(AF_UNIX, SOCK_SEQPACKET, 0);
+	if (connection_socket == -1) {
+		PERROR("socket");
+		err = 1;
+		goto cleanup;
+	}
+
+	memset(&name, 0, sizeof(struct sockaddr_un));
+	name.sun_family = AF_UNIX;
+	strncpy(name.sun_path, path, sizeof(name.sun_path) - 1);
+	LOG("bind connection socket to %s\n", path);
+	if (bind
+	    (connection_socket, (const struct sockaddr *)&name,
+	     sizeof(struct sockaddr_un)) == -1) {
+		PERROR("bind");
+		err = 1;
+		goto cleanup;
+	}
+
+	iov.iov_base = (void *)CONNECTION_SOCKET;
+	iov.iov_len = strlen(iov.iov_base);
+	if (sendmsg(*container_socket, &msg, 0) == -1) {
+		PERROR("sendmsg");
+		err = 1;
+		goto cleanup;
+	}
+
+	if (sendfd(*container_socket, &connection_socket, 1)) {
+		err = 1;
+		goto cleanup;
+	}
+
+	iov.iov_base = (char *)buf;
+	iov.iov_len = MESSAGE_SIZE;
+	n = recvmsg(*container_socket, &msg, 0);
+	if (n == -1) {
+		PERROR("recvmsg");
+		err = 1;
+		goto cleanup;
+	}
+	len = strlen(EXEC_PROCESS);
+	if (len != n || strncmp(EXEC_PROCESS, iov.iov_base, len) != 0) {
+		LOG("unexpected message from container (%d): %.*s\n", (int)n,
+		    (int)n, (char *)iov.iov_base);
+		err = 1;
+	}
+
+ cleanup:
+	if (connection_socket >= 0) {
+		if (close(connection_socket) == -1) {
+			PERROR("close connection socket");
+			err = 1;
+		}
+	}
+	LOG("unlink connection socket at %s\n", path);
+	if (unlink(path) == -1) {
+		PERROR("unlink");
+		return 1;
+	}
+	return err;
+}
+
+static int serve_socket(json_t * process, int console, int *socket)
+{
+	char buf[CLIENT_MESSAGE_SIZE];
+	struct iovec iov = { buf, CLIENT_MESSAGE_SIZE };
+	struct msghdr msg = { NULL, 0, &iov, 1, NULL, 0, 0 };
+	json_t *host;
+	json_error_t error;
+	ssize_t n;
+	int connection_socket = -1, data_socket = -1, exec_fd = -1,
+	    err = 0, size;
+
+	if (recvfd(*socket, &connection_socket) == -1) {
+		return 1;
+	}
+	LOG("listen on %d\n", connection_socket);
+	if (listen(connection_socket, 5) == -1) {
+		PERROR("listen");
+		err = 1;
+		goto cleanup;
+	}
+
+	while (1) {
+		data_socket = accept(connection_socket, NULL, NULL);
+		if (data_socket == -1) {
+			PERROR("accept");
+			err = 1;
+			goto cleanup;
+		}
+		LOG("accepted connection on %d\n", data_socket);
+
+		while (1) {
+			n = recvmsg(data_socket, &msg, 0);
+			if (n == -1) {
+				perror("recvmsg");
+				err = 1;
+				goto cleanup;
+			} else if (n == 0) {
+				LOG("lost connection on %d\n", data_socket);
+				if (close(data_socket) == -1) {
+					PERROR("close data socket");
+					err = 1;
+					data_socket = -1;
+					goto cleanup;
+				}
+				data_socket = -1;
+				break;
+			}
+
+			LOG("received start request (%d): %.*s\n", (int)n,
+			    (int)n, (char *)iov.iov_base);
+			if (n == 1 && ((char *)iov.iov_base)[0] != '\0') {
+				LOG("unexpected message from client (%d): %.*s\n", (int)n, (int)n, (char *)iov.iov_base);
+				err = 1;
+				iov.iov_base =
+				    (void *)"unexpected length-one message";
+				iov.iov_len = strlen((char *)iov.iov_base);
+				n = sendmsg(data_socket, &msg, 0);
+				if (n == -1) {
+					PERROR("sendmsg");
+				} else if (n != iov.iov_len) {
+					LOG("did not send the expected number of bytes: %d != %d\n", (int)n, (int)iov.iov_len);
+				}
+				goto cleanup;
+			} else if (n > 1) {
+				process =
+				    json_loads(iov.iov_base,
+					       JSON_REJECT_DUPLICATES, &error);
+				if (!process) {
+					err = 1;
+					size =
+					    snprintf((char *)buf,
+						     CLIENT_MESSAGE_SIZE,
+						     "error on process message %d:%d: %s\n",
+						     error.line, error.column,
+						     error.text);
+					if (size < 0) {
+						LOG("failed to format process JSON error\n");
+					} else {
+						LOG("%s\n", buf);
+						iov.iov_base = (void *)buf;
+						iov.iov_len = strlen(buf) - 1;	/* -1 to remove trailing \n */
+						n = sendmsg(data_socket,
+							    &msg, 0);
+						if (n == -1) {
+							PERROR("sendmsg");
+						} else if (n != iov.iov_len) {
+							LOG("did not send the expected number of bytes: %d != %d\n", (int)n, (int)iov.iov_len);
+						}
+					}
+					goto cleanup;
+				}
+				host = json_object_get(process, "host");
+				if (host && json_boolean_value(host)) {
+					if (recvfd(data_socket, &exec_fd) == -1) {
+						err = 1;
+						LOG("failed to receive executable file descriptor\n");
+						iov.iov_base = (void *)
+						    "failed to receive executable file descriptor";
+						iov.iov_len =
+						    strlen(iov.iov_base);
+						n = sendmsg(data_socket,
+							    &msg, 0);
+						if (n == -1) {
+							PERROR("sendmsg");
+						} else if (n != iov.iov_len) {
+							LOG("did not send the expected number of bytes: %d != %d\n", (int)n, (int)iov.iov_len);
+						}
+						goto cleanup;
+					}
+				}
+			}
+
+			iov.iov_base = "\0";
+			iov.iov_len = 1;
+			n = sendmsg(data_socket, &msg, 0);
+			if (n == -1) {
+				PERROR("sendmsg");
+				err = 1;
+				goto cleanup;
+			} else if (n != iov.iov_len) {
+				LOG("did not send the expected number of bytes: %d != %d\n", (int)n, (int)iov.iov_len);
+				err = 1;
+				goto cleanup;
+			}
+
+			if (close(data_socket) == -1) {
+				PERROR("close data socket");
+				err = 1;
+				data_socket = -1;
+				goto cleanup;
+			}
+			data_socket = -1;
+			if (close(connection_socket) == -1) {
+				PERROR("close connection socket");
+				err = 1;
+				connection_socket = -1;
+				goto cleanup;
+			}
+			connection_socket = -1;
+
+			iov.iov_base = (void *)EXEC_PROCESS;
+			iov.iov_len = strlen(iov.iov_base);
+			n = sendmsg(*socket, &msg, 0);
+			if (n == -1) {
+				PERROR("sendmsg");
+				err = 1;
+				goto cleanup;
+			} else if (n != iov.iov_len) {
+				LOG("did not send the expected number of bytes: %d != %d\n", (int)n, (int)iov.iov_len);
+				err = 1;
+				goto cleanup;
+			}
+
+			exec_process(process, console, 1, 1, socket, &exec_fd);
+			err = 1;
+			goto cleanup;
+		}
+	}
+
+ cleanup:
+	if (exec_fd >= 0) {
+		if (close(exec_fd) == -1) {
+			PERROR("close container-process executable");
+			err = 1;
+		}
+	}
+	if (connection_socket >= 0) {
+		if (close(connection_socket) == -1) {
+			PERROR("close connection socket");
+			err = 1;
+		}
+	}
+	if (data_socket >= 0) {
+		if (close(data_socket) == -1) {
+			PERROR("close data socket");
+			err = 1;
+		}
+	}
 	return err;
 }
 
@@ -1889,6 +2185,10 @@ static int handle_mounts(json_t * config)
 				return 1;
 			}
 		} else {
+			if (mkdir_all(target, 0777) == -1) {
+				return 1;
+			}
+
 			LOG("mount %lu: %s to %s (type: %s, flags: %lu, data %s)\n", (unsigned long int)i, source, target, type, flags, data);
 			if (mount(source, target, type, flags, data) == -1) {
 				PERROR("mount");
@@ -1898,94 +2198,6 @@ static int handle_mounts(json_t * config)
 	}
 
 	return 0;
-}
-
-static int open_in_path(const char *name, int flags)
-{
-	const char *p;
-	char *paths = NULL, *paths2, *path;
-	size_t i;
-	int fd;
-
-	if (name[0] == '/') {
-		LOG("open container-process executable from host %s\n", name);
-		fd = open(name, flags);
-		if (fd == -1) {
-			PERROR("open");
-			return -1;
-		}
-		return fd;
-	}
-
-	path = malloc(sizeof(char) * MAX_PATH);
-	if (!path) {
-		PERROR("malloc");
-		return -1;
-	}
-	memset(path, 0, sizeof(char) * MAX_PATH);
-
-	p = strchr(name, '/');
-	if (p) {
-		if (!getcwd(path, MAX_PATH)) {
-			PERROR("getcwd");
-			goto cleanup;
-		}
-		i = strlen(path);
-		if (i + strlen(name) + 2 > MAX_PATH) {
-			LOG("failed to format relative path (needed a buffer with %d byes)\n", (int)(i + strlen(name) + 2));
-			goto cleanup;
-		}
-		path[i++] = '/';
-		strcpy(path + i, name);
-		LOG("open container-process executable from host %s\n", path);
-		fd = open(path, flags);
-		if (fd == -1) {
-			PERROR("open");
-			return -1;
-		}
-		free(path);
-		return fd;
-	}
-
-	paths = getenv("PATH");
-	if (!paths) {
-		LOG("failed to get host PATH\n");
-		goto cleanup;
-	}
-	paths = strdup(paths);
-	if (!paths) {
-		PERROR("strdup");
-		goto cleanup;
-	}
-
-	paths2 = paths;
-	while ((p = strtok(paths2, ":"))) {
-		paths2 = NULL;
-		i = strlen(p);
-		if (i + strlen(name) + 2 > MAX_PATH) {
-			LOG("failed to format relative path (needed a buffer with %d byes)\n", (int)(i + strlen(name) + 2));
-			goto cleanup;
-		}
-		strcpy(path, p);
-		path[i++] = '/';
-		strcpy(path + i, name);
-		fd = open(path, flags);
-		if (fd >= 0) {
-			LOG("open container-process executable from host %s\n",
-			    path);
-			free(path);
-			return fd;
-		}
-	}
-
-	LOG("failed to find %s in the host PATH\n", name);
-
- cleanup:
-	if (paths) {
-		free(paths);
-	}
-	free(path);
-	return -1;
 }
 
 static int _wait(pid_t pid, const char *name)
@@ -2144,66 +2356,7 @@ static int close_pipe(int pipe_fd[])
 	return err;
 }
 
-static int sendfd(int socket, int *fd)
-{
-	struct cmsghdr *cmsg;
-	union {
-		char buf[CMSG_SPACE(sizeof(int))];
-		struct cmsghdr align;
-	} u;
-	struct msghdr msg = { 0 };
-	int *fdptr;
-
-	msg.msg_control = u.buf;
-	msg.msg_controllen = sizeof(u.buf), cmsg = CMSG_FIRSTHDR(&msg);
-	cmsg->cmsg_level = SOL_SOCKET;
-	cmsg->cmsg_type = SCM_RIGHTS;
-	cmsg->cmsg_len = CMSG_LEN(sizeof(int));
-	fdptr = (int *)CMSG_DATA(cmsg);
-	*fdptr = *fd;
-	if (sendmsg(socket, &msg, 0) == -1) {
-		PERROR("sendmsg");
-		return 1;
-	}
-
-	if (close(*fd)) {
-		PERROR("close");
-		*fd = -1;
-		return 1;
-	}
-	*fd = -1;
-
-	return 0;
-}
-
-int recvfd(int socket, int *fd)
-{
-	struct cmsghdr *cmsg;
-	union {
-		char buf[CMSG_SPACE(sizeof(int))];
-		struct cmsghdr align;
-	} u;
-	struct msghdr msg = { 0 };
-	int *fdptr;
-
-	msg.msg_control = u.buf;
-	msg.msg_controllen = sizeof(u.buf);
-	if (recvmsg(socket, &msg, 0) == -1) {
-		PERROR("recvmsg");
-		return 1;
-	}
-	cmsg = CMSG_FIRSTHDR(&msg);
-	if (cmsg == NULL || cmsg->cmsg_type != SCM_RIGHTS) {
-		LOG("unexpected message from container (no file descriptor)\n");
-		return 1;
-	}
-	fdptr = (int *)CMSG_DATA(cmsg);
-	*fd = *fdptr;
-
-	return 0;
-}
-
-static int splice_pseudoterminal_master(int *master)
+static int splice_pseudoterminal_master(int *master, int *slave)
 {
 	fd_set rfds, wfds, efds;
 	char in_buf[1024];
@@ -2221,6 +2374,12 @@ static int splice_pseudoterminal_master(int *master)
 
 		if (child_pid < 0) {	/* don't bother piping to a dead process */
 			in_open = in_len = 0;
+			if (slave && *slave >= 0) {	/* don't hold the slave open either */
+				if (close(*slave)) {
+					PERROR("close pseudoterminal slave");
+				}
+				*slave = -1;
+			}
 		}
 
 		if (in_open && in_len == 0) {	/* wait for new data */
@@ -2364,5 +2523,46 @@ static int splice_pseudoterminal_master(int *master)
 		*master = -1;
 	}
 
+	if (slave && *slave >= 0) {
+		if (close(*slave)) {
+			PERROR("close pseudoterminal slave");
+		}
+		*slave = -1;
+	}
+
+	return err;
+}
+
+static int mkdir_all(const char *path, mode_t mode)
+{
+	struct stat buf;
+	char *path_copy = NULL, *dir = NULL;
+	int err = 0;
+
+	if (stat(path, &buf) == -1) {
+		if (errno == ENOENT) {
+			path_copy = strdup(path);
+			dir = dirname(path_copy);
+			if (mkdir_all(dir, mode) == -1) {
+				err = -1;
+				goto cleanup;
+			}
+			LOG("create directory %s\n", path);;
+			if (mkdir(path, mode) == -1) {
+				PERROR("mkdir");
+				err = -1;
+				goto cleanup;
+			}
+		} else {
+			PERROR("stat");
+			err = -1;
+			goto cleanup;
+		}
+	}
+
+ cleanup:
+	if (path_copy != NULL) {
+		free(path_copy);
+	}
 	return err;
 }

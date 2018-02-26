@@ -13,7 +13,6 @@
 # You should have received a copy of the GNU General Public License
 # along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
-command -v readlink >/dev/null 2>/dev/null && test_set_prereq READLINK
-command -v timeout >/dev/null 2>/dev/null && test_set_prereq TIMEOUT
+command -v inotifywait >/dev/null 2>/dev/null && test_set_prereq INOTIFYWAIT
 
 true

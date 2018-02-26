@@ -110,4 +110,50 @@ test_expect_success BUSYBOX,ID 'Test mount namespace pivot root' "
 	test_cmp expected actual
 "
 
+test_expect_success BUSYBOX,ID 'Test mount namespace creates destination directories' "
+	mkdir -p rootfs &&
+	ccon --verbose --config-string '{
+		  \"version\": \"0.4.0\",
+		  \"namespaces\": {
+		    \"user\": {
+		      \"setgroups\": false,
+		      \"uidMappings\": [
+		        {
+		          \"containerID\": 0,
+		          \"hostID\": $(id -u),
+		          \"size\": 1
+		        }
+		      ],
+		      \"gidMappings\": [
+		        {
+		          \"containerID\": 0,
+		          \"hostID\": $(id -u),
+		          \"size\": 1
+		        }
+		      ]
+		    },
+		    \"mount\": {
+		      \"mounts\": [
+		        {
+		          \"target\": \"/tmp/\",
+		          \"type\": \"tmpfs\"
+		        },
+		        {
+		          \"target\": \"/tmp/foo/bar\",
+		          \"type\": \"tmpfs\"
+		        }
+		      ]
+		    }
+		  },
+		  \"process\": {
+		    \"args\": [\"/bin/busybox\", \"ls\", \"/tmp/foo\"],
+		    \"host\": true
+		  }
+		}' >actual &&
+	cat <<-EOF >expected &&
+		bar
+	EOF
+	test_cmp expected actual
+"
+
 test_done
