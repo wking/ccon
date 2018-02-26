@@ -899,13 +899,13 @@ static int set_terminal(json_t * process, int console, int dup_stdin,
  cleanup:
 	if (master >= 0) {
 		if (close(master)) {
-			PERROR("closing pseudoterminal master");
+			PERROR("close pseudoterminal master");
 			err = 1;
 		}
 	}
 	if (slave >= 0) {
 		if (close(slave)) {
-			PERROR("closing pseudoterminal slave");
+			PERROR("close pseudoterminal slave");
 			err = 1;
 		}
 	}
@@ -1440,7 +1440,7 @@ static int run_hooks(json_t * config, const char *name, pid_t cpid)
 	}
 	if (master >= 0) {
 		if (close(master)) {
-			PERROR("closing pseudoterminal master");
+			PERROR("close pseudoterminal master");
 			err = 1;
 		}
 	}
