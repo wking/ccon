@@ -61,8 +61,8 @@ create such a subgroup.
 * [GNU Find Utilities][findutils] for [`find`][find.1].
 * [`kill`][kill.1] from [coreutils][], [procps][], or [util-linux][].
 
-[coreutils]: http://www.gnu.org/software/coreutils/coreutils.html
-[findutils]: http://www.gnu.org/software/findutils/findutils.html
+[coreutils]: https://www.gnu.org/software/coreutils/coreutils.html
+[findutils]: https://www.gnu.org/software/findutils/findutils.html
 [procps]: https://gitlab.com/procps-ng/procps
 [util-linux]: https://www.kernel.org/pub/linux/utils/util-linux/
 

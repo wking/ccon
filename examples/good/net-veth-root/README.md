@@ -81,8 +81,8 @@ where 192.168.0.2 is the IP address of the ccon-running host.
 [rfc922.7]: https://tools.ietf.org/html/rfc922#section-7
 [rfc1918.3]: https://tools.ietf.org/html/rfc1918#section-3
 
-[bridge-utils]: http://www.linuxfoundation.org/collaborate/workgroups/networking/bridge
-[iproute2]: http://www.linuxfoundation.org/collaborate/workgroups/networking/iproute2
+[bridge-utils]: https://wiki.linuxfoundation.org/networking/bridge
+[iproute2]: https://wiki.linuxfoundation.org/networking/iproute2
 [netcat]: http://nc110.sourceforge.net/
 [procps]: https://gitlab.com/procps-ng/procps
 [util-linux]: https://www.kernel.org/pub/linux/utils/util-linux/
@@ -94,7 +94,7 @@ where 192.168.0.2 is the IP address of the ccon-running host.
 [user_namespaces.7]: http://man7.org/linux/man-pages/man7/user_namespaces.7.html
 [brctl.8]: http://man7.org/linux/man-pages/man8/brctl.8.html
 [ip.8]: http://man7.org/linux/man-pages/man8/ip.8.html
-[ip-link.8]: https://git.kernel.org/cgit/linux/kernel/git/shemminger/iproute2.git/tree/man/man8/ip-link.8.in?id=v4.2.0
+[ip-link.8]: https://git.kernel.org/pub/scm/network/iproute2/iproute2.git/tree/man/man8/ip-link.8.in?h=v4.2.0
 [ip-netns.8]: http://man7.org/linux/man-pages/man8/ip-netns.8.html
 [ip-route.8]: http://man7.org/linux/man-pages/man8/ip-route.8.html
 [iptables.8]: http://man7.org/linux/man-pages/man8/iptables.8.html

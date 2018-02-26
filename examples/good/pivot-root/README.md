@@ -59,16 +59,16 @@ namespace][1b852bce-thread], 2015-05-09).
 [dev]: http://refspecs.linuxfoundation.org/FHS_3.0/fhs/ch03s06.html
 [devtmpfs]: http://thread.gmane.org/gmane.linux.kernel/830032
 [FHS-3.0]: http://refspecs.linuxfoundation.org/FHS_3.0/fhs/index.html
-[lm_sensors]: http://www.lm-sensors.org/
+[lm_sensors]: https://github.com/groeck/lm-sensors
 [run]: http://refspecs.linuxfoundation.org/FHS_3.0/fhs/ch03s15.html
 [sys]: http://refspecs.linuxfoundation.org/FHS_3.0/fhs/ch06.html#sysKernelAndSystemInformation
 [tmp]: http://refspecs.linuxfoundation.org/FHS_3.0/fhs/ch03s18.html
 
 [mknod-user-namespace]: http://thread.gmane.org/gmane.linux.file-systems/72682/focus=72684
-[e51db735]: https://git.kernel.org/cgit/linux/kernel/git/torvalds/linux.git/commit/?id=e51db73532955dc5eaba4235e62b74b460709d5b
+[e51db735]: https://git.kernel.org/pub/scm/linux/kernel/git/torvalds/linux.git/commit/?id=e51db73532955dc5eaba4235e62b74b460709d5b
 [e51db735-thread]: http://thread.gmane.org/gmane.linux.file-systems/77413
-[e51db735-proc-cap-pidns]: https://git.kernel.org/cgit/linux/kernel/git/torvalds/linux.git/diff/fs/proc/root.c?id=e51db73532955dc5eaba4235e62b74b460709d5b
-[1b852bce]: https://git.kernel.org/cgit/linux/kernel/git/torvalds/linux.git/commit/?id=1b852bceb0d111e510d1a15826ecc4a19358d512
+[e51db735-proc-cap-pidns]: https://git.kernel.org/pub/scm/linux/kernel/git/torvalds/linux.git/commit/?id=e51db73532955dc5eaba4235e62b74b460709d5b
+[1b852bce]: https://git.kernel.org/pub/scm/linux/kernel/git/torvalds/linux.git/commit/?id=1b852bceb0d111e510d1a15826ecc4a19358d512
 [1b852bce-thread]: http://thread.gmane.org/gmane.linux.kernel.containers/29284/focus=29285
 
 [mknod.1]: http://man7.org/linux/man-pages/man1/mknod.1.html

@@ -48,16 +48,16 @@ digit.  The first digit classifies the test:
 * [libcap-ng][] for [`captest`][captest.8].
 
 [BusyBox]: http://www.busybox.net/
-[coreutils]: http://www.gnu.org/software/coreutils/coreutils.html
+[coreutils]: https://www.gnu.org/software/coreutils/coreutils.html
 [Grep]: https://www.gnu.org/software/grep/
-[iproute2]: http://www.linuxfoundation.org/collaborate/workgroups/networking/iproute2
+[iproute2]: https://wiki.linuxfoundation.org/networking/iproute2
 [inotify-tools]: https://github.com/rvoicilas/inotify-tools/wiki
 [libcap-ng]: http://people.redhat.com/sgrubb/libcap-ng/
 [net-tools]: http://net-tools.sourceforge.net/
 [prove]: http://perldoc.perl.org/prove.html
 [sed]: http://sed.sourceforge.net/
-[Sharness]: http://mlafeldt.github.io/sharness/
-[submodule]: http://git-scm.com/docs/git-submodule
+[Sharness]: https://chriscool.github.io/sharness/
+[submodule]: https://git-scm.com/docs/git-submodule
 
 [cat.1]: http://pubs.opengroup.org/onlinepubs/9699919799/utilities/cat.html
 [echo.1]: http://pubs.opengroup.org/onlinepubs/9699919799/utilities/echo.html
@@ -78,5 +78,5 @@ digit.  The first digit classifies the test:
 [touch.1]: http://pubs.opengroup.org/onlinepubs/9699919799/utilities/touch.html
 [tty.1]: http://pubs.opengroup.org/onlinepubs/9699919799/utilities/tty.html
 [wait.1]: http://pubs.opengroup.org/onlinepubs/9699919799/utilities/wait.html
-[captest.8]: https://fedorahosted.org/libcap-ng/browser/trunk/utils/captest.8
-[ip.8]: https://git.kernel.org/cgit/linux/kernel/git/shemminger/iproute2.git/tree/man/man8/ip.8?id=v4.2.0
+[captest.8]: https://github.com/stevegrubb/libcap-ng/blob/v0.7.9/utils/captest.8
+[ip.8]: https://git.kernel.org/pub/scm/network/iproute2/iproute2.git/tree/man/man8/ip.8?h=v4.2.0

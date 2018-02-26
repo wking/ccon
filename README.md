@@ -876,9 +876,9 @@ Ccon is pretty easy to compile, but to use the stock
 ## Licensing
 
 * Ccon is under the [GPLv3+](COPYING).
-* [Glibc is under][glibc-license] the [LGPL-2.1+][glibc-license].
+* [Glibc is under][glibc-license] the [LGPL-2.1+][lgpl-2.1].
 * [Jansson is under][jansson-license] the [MIT license][mit].
-* [libcap-ng is under][libcap-ng-license] the [LGPL-2.1+][glibc-license].
+* [libcap-ng is under][libcap-ng-license] the [LGPL-2.1+][lgpl-2.1].
 
 Because all the dependencies are [GPL-compatible][], ccon binaries can
 be distributed under the GPLv3+.
@@ -888,7 +888,7 @@ be distributed under the GPLv3+.
 [bash]: https://www.gnu.org/software/bash/
 [bash-process-substitution]: https://www.gnu.org/software/bash/manual/html_node/Process-Substitution.html
 [BusyBox]: http://www.busybox.net/
-[GCC]: http://gcc.gnu.org/
+[GCC]: https://gcc.gnu.org/
 [glibc]: https://www.gnu.org/software/libc/
 [glibc-license]: https://sourceware.org/git/?p=glibc.git;a=blob;f=COPYING.LIB;hb=glibc-2.22
 [glibc-77356912]: https://sourceware.org/git/?p=glibc.git;a=commit;h=77356912e83601fd0240d22fe4d960348b82b5c3
@@ -897,12 +897,12 @@ be distributed under the GPLv3+.
 [Jansson]: http://www.digip.org/jansson/
 [jansson-license]: https://github.com/akheron/jansson/blob/v2.7/LICENSE
 [libcap-ng]: http://people.redhat.com/sgrubb/libcap-ng/
-[libcap-ng-license]: https://fedorahosted.org/libcap-ng/browser/tags/libcap-ng-0.7.7/COPYING.LIB
+[libcap-ng-license]: https://github.com/stevegrubb/libcap-ng/blob/v0.7.9/COPYING.LIB
 [linux]: https://www.kernel.org/
 [make]: https://www.gnu.org/software/make/
 [Nginx]: http://nginx.org/
-[pkg-config]: http://www.freedesktop.org/wiki/Software/pkg-config/
-[semver]: http://semver.org/spec/v2.0.0.html
+[pkg-config]: https://www.freedesktop.org/wiki/Software/pkg-config/
+[semver]: https://semver.org/spec/v2.0.0.html
 [systemd-container-interface]: https://www.freedesktop.org/wiki/Software/systemd/ContainerInterface/
 
 [GPL-compatible]: https://www.gnu.org/licenses/license-list.html#GPLCompatibleLicenses
@@ -965,4 +965,4 @@ be distributed under the GPLv3+.
 [cgroups-unified]: https://www.kernel.org/doc/Documentation/cgroup-v2.txt
 [devpts]: https://www.kernel.org/doc/Documentation/filesystems/devpts.txt
 [rfc1345.s5]: https://tools.ietf.org/html/rfc1345#section-5
-[sd_listen_fds]: http://www.freedesktop.org/software/systemd/man/sd_listen_fds.html
+[sd_listen_fds]: https://www.freedesktop.org/software/systemd/man/sd_listen_fds.html
