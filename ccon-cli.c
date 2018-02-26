@@ -236,7 +236,7 @@ static void usage(FILE * stream, char *path)
 
 static void version()
 {
-	printf("ccon-cli 0.3.0\n");
+	printf("ccon-cli %s\n", CCON_VERSION);
 }
 
 static char *read_file(const char *path)

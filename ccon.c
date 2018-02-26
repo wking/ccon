@@ -233,7 +233,7 @@ static void usage(FILE * stream, char *path)
 
 static void version()
 {
-	printf("ccon 0.4.0\n");
+	printf("ccon %s\n", CCON_VERSION);
 }
 
 static void kill_child(int signum, siginfo_t * siginfo, void *unused)
@@ -399,7 +399,7 @@ static int validate_version(const char *version)
 		"0.1.0",
 		"0.2.0",
 		"0.3.0",
-		"0.4.0",
+		CCON_VERSION,
 		NULL,
 	};
 	int i, err;
