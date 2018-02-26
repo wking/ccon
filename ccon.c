@@ -179,7 +179,7 @@ static int parse_args(int argc, char **argv, const char **config_path,
 		{"version", no_argument, NULL, 'v'},
 		{"config", required_argument, NULL, 'c'},
 		{"config-string", required_argument, NULL, 's'},
-		{},
+		{NULL},
 	};
 
 	while (1) {
