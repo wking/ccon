@@ -54,6 +54,16 @@ namespace][1b852bce-thread], 2015-05-09).
 9. [`/run`][run] for compliance with the [FHS 3.0][FHS-3.0].
 10. [`/tmp`][tmp] for compliance with the [FHS 3.0][FHS-3.0].
 
+## Timezone
+
+The container will use UTC by default.  To configure a different
+timezone, set `/etc/localtime`][tzset.3] to contain [timezone
+information][tzfile.5].  For example:
+
+```
+$ cp -L /etc/localtime rootfs/etc/localtime
+```
+
 [BusyBox]: http://www.busybox.net/
 [cgroups]: https://www.kernel.org/doc/Documentation/cgroup-v1/cgroups.txt
 [dev]: http://refspecs.linuxfoundation.org/FHS_3.0/fhs/ch03s06.html
@@ -78,6 +88,8 @@ namespace][1b852bce-thread], 2015-05-09).
 [environ.7]: http://man7.org/linux/man-pages/man7/environ.7.html
 [namespaces.7]: http://man7.org/linux/man-pages/man7/namespaces.7.html
 [pid_namespaces.7]: http://man7.org/linux/man-pages/man7/pid_namespaces.7.html
-[user_namespaces.7]: http://man7.org/linux/man-pages/man7/user_namespaces.7.html
 [switch_root.8.notes]: http://man7.org/linux/man-pages/man8/switch_root.8.html#NOTES
 [sysctl.8]: http://man7.org/linux/man-pages/man8/sysctl.8.html
+[tzfile.5]: http://man7.org/linux/man-pages/man5/tzfile.5.html
+[tzset.3]: http://man7.org/linux/man-pages/man3/tzset.3.html
+[user_namespaces.7]: http://man7.org/linux/man-pages/man7/user_namespaces.7.html
