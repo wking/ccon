@@ -24,6 +24,7 @@
 #include <getopt.h>
 #include <grp.h>
 #include <libgen.h>
+#include <locale.h>
 #include <sched.h>
 #include <signal.h>
 #include <string.h>
@@ -85,6 +86,7 @@ static void kill_child(int signum, siginfo_t * siginfo, void *unused);
 static void reap_child(int signum, siginfo_t * siginfo, void *unused);
 static int validate_config(json_t * config);
 static int validate_version(const char *version);
+static float version_api(const char *version);
 static int run_container(json_t * config, const char *socket_path);
 static int handle_parent(json_t * config, const char *socket_path, pid_t cpid,
 			 int *socket);
@@ -268,9 +270,10 @@ static void reap_child(int signum, siginfo_t * siginfo, void *unused)
 
 static int validate_config(json_t * config)
 {
-	json_t *value;
+	json_t *value, *pre_start;
 	json_error_t error;
 	const char *version;
+	float api;
 	int err;
 
 	if (!json_is_object(config)) {
@@ -340,6 +343,7 @@ static int validate_config(json_t * config)
 	      "s?[*],"	/* "env": [...] */
 	    "},"	/* }  (process) */
 	    "s?{"	/* "hooks": { */
+	      "s?[*],"	/* "post-create": [...] */
 	      "s?[*],"	/* "pre-start": [...] */
 	      "s?[*]"	/* "post-stop": [...] */
 	    "},"	/* }  (hooks) */
@@ -376,6 +380,7 @@ static int validate_config(json_t * config)
 	    "host",
 	    "env",
 	  "hooks",
+	    "post-create",
 	    "pre-start",
 	    "post-stop"
 	);
@@ -385,10 +390,31 @@ static int validate_config(json_t * config)
 		return err;
 	}
 
+	api = version_api(version);
+	if (api < 0) {
+		return 1;
+	}
+
+	value = json_object_get(config, "hooks");
+	if (value) {
+		pre_start = json_object_get(value, "pre-start");
+		if (pre_start) {
+			if (api < 0.5) {
+				if (json_object_set
+				    (value, "post-create", pre_start) == -1) {
+					return 1;
+				}
+			} else {
+				LOG("ccon %s does not support hooks.pre-start\n", CCON_VERSION);
+				return 1;
+			}
+		}
+	}
+
 	/*
 	 * TODO, validate:
 	 * * v0.1.0 spec doesn't contain process.host
-	 * * array values (process.env, hooks.pre-start, ...)
+	 * * array values (process.env, hooks.post-create, ...)
 	 */
 	return 0;
 }
@@ -399,6 +425,7 @@ static int validate_version(const char *version)
 		"0.1.0",
 		"0.2.0",
 		"0.3.0",
+		"0.4.0",
 		CCON_VERSION,
 		NULL,
 	};
@@ -414,6 +441,47 @@ static int validate_version(const char *version)
 	}
 	LOG("config version %s is not supported\n", version);
 	return 1;
+}
+
+static float version_api(const char *version)
+{
+	locale_t orig = (locale_t) 0, posix = (locale_t) 0;
+	struct lconv *lconv = localeconv();
+	const char *radix = (*lconv).decimal_point;
+	float api;
+
+	if (strncmp(radix, ".", strlen(".")) != 0) {
+		posix = newlocale(LC_NUMERIC_MASK, "POSIX", (locale_t) 0);
+		if (posix == (locale_t) 0) {
+			PERROR("newlocale");
+			api = -1;
+			goto cleanup;
+		}
+
+		orig = uselocale(posix);
+		if (orig == (locale_t) 0) {
+			PERROR("uselocale");
+			api = -1;
+			goto cleanup;
+		}
+	}
+
+	api = strtof(version, NULL);
+
+ cleanup:
+	if (orig != (locale_t) 0) {
+		orig = uselocale(orig);
+		if (orig == (locale_t) 0) {
+			PERROR("uselocale");
+			api = -1;
+		}
+	}
+
+	if (posix != (locale_t) 0) {
+		freelocale(posix);
+	}
+
+	return api;
 }
 
 static int run_container(json_t * config, const char *socket_path)
@@ -609,7 +677,7 @@ static int handle_parent(json_t * config, const char *socket_path, pid_t cpid,
 		goto wait;
 	}
 
-	if (run_hooks(config, "pre-start", cpid)) {
+	if (run_hooks(config, "post-create", cpid)) {
 		err = 1;
 		goto wait;
 	}
@@ -793,7 +861,7 @@ static int handle_child(json_t * config, int *socket, int *exec_fd,
 	console = json_object_get(config, "console");
 	process = json_object_get(config, "process");
 
-	/* block while parent runs pre-start hooks */
+	/* block while parent runs post-create hooks */
 
 	iov.iov_base = (char *)buf;
 	iov.iov_len = MESSAGE_SIZE;
@@ -1434,7 +1502,7 @@ static int run_hooks(json_t * config, const char *name, pid_t cpid)
 		err = _wait(hpid, "hook");
 		hook_pid = -1;
 		if (cpid && err) {
-			err = 1;	/* abort failed pre-start execution */
+			err = 1;	/* abort failed post-create execution */
 			goto cleanup;
 		} else {
 			err = 0;	/* ignore failed post-stop execution */

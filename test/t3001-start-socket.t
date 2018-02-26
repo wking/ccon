@@ -21,7 +21,7 @@ test_description='Test start socket'
 
 test_expect_success BUSYBOX,TIMEOUT 'Test socket blocks without start' "
 	test_expect_code 124 timeout 1 ccon --socket sock --config-string '{
-		  \"version\": \"0.1.0\",
+		  \"version\": \"0.5.0\",
 		  \"process\": {
 		    \"args\": [\"busybox\", \"echo\", \"hello\"]
 		  }
@@ -40,7 +40,7 @@ test_expect_success BUSYBOX,ECHO,GREP,INOTIFYWAIT,SLEEP,WAIT 'Test start with em
 		sleep 0
 	done &&
 	ccon --socket sock/sock --config-string '{
-		  \"version\": \"0.1.0\",
+		  \"version\": \"0.5.0\",
 		  \"process\": {
 		    \"args\": [\"busybox\", \"echo\", \"hello\"]
 		  }
@@ -64,7 +64,7 @@ test_expect_success BUSYBOX,ECHO,GREP,INOTIFYWAIT,SLEEP,WAIT 'Test start with pr
 		sleep 0
 	done &&
 	ccon --socket sock/sock --config-string '{
-		  \"version\": \"0.1.0\"
+		  \"version\": \"0.5.0\"
 		}' >actual &&
 	wait &&
 	echo 'goodbye' >expected &&
@@ -86,7 +86,7 @@ test_expect_success BUSYBOX,ECHO,GREP,ID,INOTIFYWAIT,SLEEP,WAIT 'Test start with
 		sleep 0
 	done &&
 	ccon --socket sock/sock --config-string '{
-		  \"version\": \"0.2.0\",
+		  \"version\": \"0.5.0\",
 		  \"namespaces\": {
 		    \"user\": {
 		      \"setgroups\": false,
@@ -141,7 +141,7 @@ test_expect_success BUSYBOX,ECHO,GREP,INOTIFYWAIT,SLEEP,WAIT 'Test recover conta
 		sleep 0
 	done &&
 	test_expect_code 124 ccon --socket sock/sock --config-string '{
-		  \"version\": \"0.1.0\"
+		  \"version\": \"0.5.0\"
 		}' &&
 	wait
 "

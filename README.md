@@ -35,7 +35,7 @@ less opinionated than [LXC][lxc.container.conf.5]).
     * [Host](#host)
     * [Environment variables](#environment-variables)
   * [Hooks](#hooks)
-    * [Pre-start hooks](#pre-start-hooks)
+    * [Post-create hooks](#post-create-hooks)
     * [Post-stop hooks](#post-stop-hooks)
 * [Dependencies](#dependencies)
   * [Build dependencies](#build-dependencies)
@@ -62,7 +62,7 @@ synchronize the container setup.  Here's an outline of the lifecycle:
 | blocks on full namespace         | joins namespaces              |
 |                                  | mounts filesystems            |
 |                                  | ← sends namespaces-complete   |
-| runs pre-start hooks             | blocks on exec-message        |
+| runs post-create hooks           | blocks on exec-message        |
 | binds to socket path             |                               |
 | sends connection socket →        |                               |
 | blocks on exec-process message   | listens for process JSON      |
@@ -195,7 +195,7 @@ or (using [Bash][bash]'s [process
 substitution][bash-process-substitution]):
 
 ```
-$ ccon --config <(echo '{"version": "0.4.0", "process": …}')
+$ ccon --config <(echo '{"version": "0.5.0", "process": …}')
 ```
 
 You can also specify the config JSON directly on the command line with
@@ -203,7 +203,7 @@ You can also specify the config JSON directly on the command line with
 pipes or process substitution are too awkward:
 
 ```
-$ ccon --config-string '{"version": "0.4.0", "process": …}'
+$ ccon --config-string '{"version": "0.5.0", "process": …}'
 ```
 
 There are additional examples focusing on specific tasks in the
@@ -218,7 +218,7 @@ The ccon version represented in the config file.
 #### Example
 
 ```json
-"version": "0.4.0"
+"version": "0.5.0"
 ```
 
 ### Namespaces
@@ -724,11 +724,11 @@ the appropriate point in the [lifecycle](#lifecycle).
 
 ```json
 "hooks": {
-  "pre-start": [
+  "post-create": [
     {
       "args": [
         "echo",
-        "I'm a pre-start hook"
+        "I'm a post-create"
       ]
     }
   ],
@@ -746,17 +746,18 @@ the appropriate point in the [lifecycle](#lifecycle).
 Which will just print messages to the host process's stdout for each
 hook-triggering event.
 
-#### Pre-start hooks
+#### Post-create hooks
 
 Hooks run after the container setup is complete but before the
-configured [**`process`**](#process) is executed.  This is useful for
-additional container configuration (e.g. creating cgroups or
-performing network setup)
+configured [**`process`**](#process) is executed.  With
+[`--socket=PATH`](#socket-communication) these are run just before the
+socket path is created.  This is useful for additional container
+configuration (e.g. creating cgroups or performing network setup).
 
-* **`pre-start`** (optional, array of objects) holds [process
+* **`post-create`** (optional, array of objects) holds [process
   objects](#process) (like [**`process`**](#process) except for stdin
   handling and the lack of [**`host`**](#host)) to run after the
-  pre-start event.
+  post-create event.
 
 Each hook receives the container process's PID in the host [PID
 namespace][namespaces.7] on its [stdin][stdin.3].  Its stdout and
@@ -771,7 +772,7 @@ the usual [lifecycle](#lifecycle) at “waits on child death”.
 #### Example
 
 ```json
-"pre-start": [
+"post-create": [
   {
     "args": [
       "mkdir",
@@ -801,9 +802,9 @@ You could handle this in the shell with:
 $ ccon; post_stop_hook_1; post_stop_hook_2
 ```
 
-but the most common use will be cleaning up after [pre-start
-hooks](#pre-start-hooks), and it's nice to configure both in the same
-place (the ccon config file).
+but the most common use will be cleaning up after [post-create
+hooks](#post-create-hooks), and it's nice to configure both in the
+same place (the ccon config file).
 
 * **`post-stop`** (optional, array of objects) holds [process
   objects](#process) (like [**`process`**](#process) except for the
@@ -836,9 +837,9 @@ continues as if the hook had exited with zero.
 ```
 
 Which will remove `nginx-0/container` and `nginx-0` cgroups (such as
-those created by the [pre-start example](#pre-start-hooks).  This will
-only succeed if the namespaces are empty, so if you were using this in
-production it would be best to:
+those created by the [post-create example](#post-create-hooks).  This
+will only succeed if the namespaces are empty, so if you were using
+this in production it would be best to:
 
 * Ensure there were no other processes in those cgroups (e.g. by
   creating a new [PID namespace](#pid-namespace) and adding all

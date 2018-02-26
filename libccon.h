@@ -24,7 +24,7 @@
 #include <errno.h>
 #include <jansson.h>
 
-#define CCON_VERSION "0.4.0"
+#define CCON_VERSION "0.5.0"
 #define MAX_PATH 1024
 
 /* client messages passed through the --socket */

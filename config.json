@@ -1,5 +1,5 @@
 {
-  "version": "0.1.0",
+  "version": "0.5.0",
   "namespaces": {
     "user": {
       "setgroups": false,
@@ -65,11 +65,11 @@
     ]
   },
   "hooks": {
-    "pre-start": [
+    "post-create": [
       {
         "args": [
           "echo",
-          "I'm a pre-start hook"
+          "I'm a post-create hook"
         ]
       }
     ],

@@ -69,13 +69,13 @@ def create(config, root, id=None, verbose=False):
         config = json.load(f)
     if 'hooks' not in config:
         config['hooks'] = {}
-    if 'pre-start' not in config['hooks']:
-        config['hooks']['pre-start'] = []
+    if 'post-create' not in config['hooks']:
+        config['hooks']['post-create'] = []
     args = [sys.argv[0]]
     if verbose:
         args.append('--verbose')
     args.extend(['hook', '--id', id])
-    config['hooks']['pre-start'].append({'args': args, 'host': True})
+    config['hooks']['post-create'].append({'args': args})
     _exec_ccon(config=config, verbose=verbose)
 
 

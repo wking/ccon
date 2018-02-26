@@ -113,7 +113,7 @@ test_expect_success BUSYBOX,ID 'Test mount namespace pivot root' "
 test_expect_success BUSYBOX,ID 'Test mount namespace creates destination directories' "
 	mkdir -p rootfs &&
 	ccon --verbose --config-string '{
-		  \"version\": \"0.4.0\",
+		  \"version\": \"0.5.0\",
 		  \"namespaces\": {
 		    \"user\": {
 		      \"setgroups\": false,

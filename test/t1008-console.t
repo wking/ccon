@@ -21,7 +21,7 @@ test_description='Test console (and its interaction with process terminal)'
 
 test_expect_success BUSYBOX,!ROOT 'Test unprivileged console unset' "
 	test_expect_code 1 ccon --config-string '{
-		  \"version\": \"0.4.0\",
+		  \"version\": \"0.5.0\",
 		  \"process\": {
 		    \"args\": [\"busybox\", \"sh\", \"-c\", \"test -t 3 3>>/dev/console\"]
 		  }
@@ -32,7 +32,7 @@ test_expect_success BUSYBOX,!ROOT 'Test unprivileged console unset' "
 
 test_expect_success BUSYBOX,ROOT 'Test privileged console unset' "
 	ccon --config-string '{
-		  \"version\": \"0.4.0\",
+		  \"version\": \"0.5.0\",
 		  \"process\": {
 		    \"args\": [\"busybox\", \"sh\", \"-c\", \"test -t 3 3>>/dev/console\"]
 		  }
@@ -43,7 +43,7 @@ test_expect_success BUSYBOX,ROOT 'Test privileged console unset' "
 
 test_expect_success PRINTF,SHELL 'Test console' "
 	ccon --verbose --config-string '{
-		  \"version\": \"0.4.0\",
+		  \"version\": \"0.5.0\",
 		  \"namespaces\": {
 		    \"user\": {},
 		    \"mount\": {}
@@ -59,7 +59,7 @@ test_expect_success PRINTF,SHELL 'Test console' "
 
 test_expect_success PRINTF,SHELL 'Test console and terminal' "
 	ccon --verbose --config-string '{
-		  \"version\": \"0.4.0\",
+		  \"version\": \"0.5.0\",
 		  \"namespaces\": {
 		    \"user\": {},
 		    \"mount\": {}
