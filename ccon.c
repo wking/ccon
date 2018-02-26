@@ -77,9 +77,10 @@ static pid_t child_pid;
 static pid_t hook_pid;
 
 /* logging */
-static int verbose;
-#define LOG(...) do {if (verbose) {fprintf(stderr, __VA_ARGS__);}} while(0)
-#define PERROR(...) do {if (verbose) {perror(__VA_ARGS__);}} while(0)
+static int verbose = 0;
+static int log_fd = STDERR_FILENO;
+#define LOG(...) do {if (verbose && log_fd >= 0) {dprintf(log_fd, __VA_ARGS__);}} while(0)
+#define PERROR(s) do {LOG("%s: %s\n", s, strerror(errno));} while(0)
 
 static int parse_args(int argc, char **argv, const char **config_path,
 		      const char **config_string);
@@ -888,6 +889,16 @@ static int set_terminal(json_t * process, int console, int dup_stdin,
 				goto cleanup;
 			}
 
+			if (log_fd == STDERR_FILENO) {
+				log_fd = dup(STDERR_FILENO);
+				if (log_fd == -1) {
+					log_fd = STDERR_FILENO;
+					PERROR("dup");
+					err = 1;
+					goto cleanup;
+				}
+			}
+
 			if (dup2(slave, STDERR_FILENO) == -1) {
 				PERROR("dup2");
 				err = 1;
@@ -907,6 +918,11 @@ static int set_terminal(json_t * process, int console, int dup_stdin,
 		if (close(slave)) {
 			PERROR("close pseudoterminal slave");
 			err = 1;
+		}
+	}
+	if (err != 0 && log_fd >= 0 && log_fd != STDERR_FILENO) {
+		if (close(log_fd)) {
+			PERROR("close log file descriptor");
 		}
 	}
 	return err;
@@ -1140,6 +1156,13 @@ static void exec_process(json_t * process, int console, int dup_stdin,
 			LOG(" %s", argv[i]);
 		}
 		LOG("\n");
+		if (log_fd != STDERR_FILENO) {
+			if (close(log_fd) == -1) {
+				PERROR("close log file descriptor");
+				goto cleanup;
+			}
+			log_fd = -1;
+		}
 		execveat(*exec_fd, "", argv, env, AT_EMPTY_PATH);
 		PERROR("execveat");
 		goto cleanup;
@@ -1154,22 +1177,24 @@ static void exec_process(json_t * process, int console, int dup_stdin,
 		}
 
 		LOG("execute [%s]:", path);
-		for (i = 0; argv[i]; i++) {
-			LOG(" %s", argv[i]);
-		}
-		LOG("\n");
-		execvpe(path, argv, env);
-		PERROR("execvpe");
 	} else {
-
+		path = argv[0];
 		LOG("execute:");
-		for (i = 0; argv[i]; i++) {
-			LOG(" %s", argv[i]);
-		}
-		LOG("\n");
-		execvpe(argv[0], argv, env);
-		PERROR("execvpe");
 	}
+	for (i = 0; argv[i]; i++) {
+		LOG(" %s", argv[i]);
+	}
+	LOG("\n");
+
+	if (log_fd != STDERR_FILENO) {
+		if (close(log_fd) == -1) {
+			PERROR("close log file descriptor");
+			goto cleanup;
+		}
+		log_fd = -1;
+	}
+	execvpe(path, argv, env);
+	PERROR("execvpe");
 
  cleanup:
 	if (argv) {

@@ -57,7 +57,7 @@ test_expect_success PRINTF,SHELL 'Test console' "
 	test_cmp expected actual
 "
 
-test_expect_success GREP,PRINTF,SHELL 'Test console and terminal' "
+test_expect_success PRINTF,SHELL 'Test console and terminal' "
 	ccon --verbose --config-string '{
 		  \"version\": \"0.4.0\",
 		  \"namespaces\": {
@@ -69,7 +69,7 @@ test_expect_success GREP,PRINTF,SHELL 'Test console and terminal' "
 		    \"terminal\": true,
 		    \"args\": [\"sh\", \"-c\", \"echo hello >>/dev/console && echo goodbye\"]
 		  }
-		}' | grep -v /dev/console >actual &&
+		}' >actual &&
 	printf 'hello\r\ngoodbye\r\n' >expected &&
 	test_cmp expected actual
 "
