@@ -288,6 +288,14 @@ discussed in [`user_namespaces(7)`][user_namespaces.7].
     * **`size`** (required, integer) is the length of the range of
       mapped GIDs.
 
+Debian [disables unprivileged user namespaces by default][dsa-4073] to
+reduce the risk of exploits based on kernel bugs.  If you are
+comfortable assuming those risks, you can enable it with:
+
+```
+# sysctl kernel.unprivileged_userns_clone=1
+```
+
 ##### Example
 
 ```json
@@ -888,6 +896,7 @@ be distributed under the GPLv3+.
 [bash]: https://www.gnu.org/software/bash/
 [bash-process-substitution]: https://www.gnu.org/software/bash/manual/html_node/Process-Substitution.html
 [BusyBox]: http://www.busybox.net/
+[dsa-4073]: https://www.debian.org/security/2017/dsa-4073
 [GCC]: https://gcc.gnu.org/
 [glibc]: https://www.gnu.org/software/libc/
 [glibc-license]: https://sourceware.org/git/?p=glibc.git;a=blob;f=COPYING.LIB;hb=glibc-2.22
