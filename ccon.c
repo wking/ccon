@@ -2610,6 +2610,11 @@ static int mkdir_all(const char *path, mode_t mode)
 	if (stat(path, &buf) == -1) {
 		if (errno == ENOENT) {
 			path_copy = strdup(path);
+			if (path_copy == NULL) {
+				PERROR("strdup");
+				err = -1;
+				goto cleanup;
+			}
 			dir = dirname(path_copy);
 			if (mkdir_all(dir, mode) == -1) {
 				err = -1;
