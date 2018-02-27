@@ -156,4 +156,51 @@ test_expect_success BUSYBOX,ID 'Test mount namespace creates destination directo
 	test_cmp expected actual
 "
 
+test_expect_success BUSYBOX,ID 'Test mount namespace creates destination files' "
+	mkdir -p rootfs &&
+	ccon --verbose --config-string '{
+		  \"version\": \"0.5.0\",
+		  \"namespaces\": {
+		    \"user\": {
+		      \"setgroups\": false,
+		      \"uidMappings\": [
+		        {
+		          \"containerID\": 0,
+		          \"hostID\": $(id -u),
+		          \"size\": 1
+		        }
+		      ],
+		      \"gidMappings\": [
+		        {
+		          \"containerID\": 0,
+		          \"hostID\": $(id -u),
+		          \"size\": 1
+		        }
+		      ]
+		    },
+		    \"mount\": {
+		      \"mounts\": [
+		        {
+		          \"target\": \"/tmp/\",
+		          \"type\": \"tmpfs\"
+		        },
+		        {
+		          \"source\": \"/bin/busybox\",
+		          \"target\": \"/tmp/a/b/c\",
+		          \"flags\": [
+		            \"MS_BIND\"
+		          ]
+		        }
+		      ]
+		    }
+		  },
+		  \"process\": {
+		    \"args\": [\"/bin/busybox\", \"ls\", \"/tmp/a/b\"],
+		    \"host\": true
+		  }
+		}' >actual &&
+	echo c >expected &&
+	test_cmp expected actual
+"
+
 test_done

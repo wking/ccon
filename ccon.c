@@ -123,6 +123,7 @@ static char **json_array_of_strings_value(json_t * array);
 static int close_pipe(int pipe_fd[]);
 static int splice_pseudoterminal_master(int *master, int *slave);
 static int mkdir_all(const char *path, mode_t mode);
+static int mkfile_all(const char *path, mode_t dir_mode, mode_t file_mode);
 
 int main(int argc, char **argv)
 {
@@ -2137,12 +2138,13 @@ static int get_mount_flag(const char *name, unsigned long *flag)
 
 static int handle_mounts(json_t * config)
 {
+	struct stat buf;
 	json_t *namespaces, *mt_ns, *mounts, *mt, *v1, *v2;
 	const char *source, *target, *type, *data, *flag;
 	char cwd[MAX_PATH], full_source[MAX_PATH], full_target[MAX_PATH];
 	unsigned long flags, f;
 	size_t i, j;
-	int size;
+	int size, mkdir;
 
 	namespaces = json_object_get(config, "namespaces");
 	if (!namespaces) {
@@ -2253,7 +2255,19 @@ static int handle_mounts(json_t * config)
 				return 1;
 			}
 		} else {
-			if (mkdir_all(target, 0777) == -1) {
+			mkdir = 1;
+			if (source) {
+				if (stat(source, &buf) == -1) {
+					PERROR("stat");
+					return 1;
+				}
+				mkdir = S_ISDIR(buf.st_mode);
+			}
+			if (mkdir) {
+				if (mkdir_all(target, 0777) == -1) {
+					return 1;
+				}
+			} else if (mkfile_all(target, 0777, 0666) == -1) {
 				return 1;
 			}
 
@@ -2620,7 +2634,7 @@ static int mkdir_all(const char *path, mode_t mode)
 				err = -1;
 				goto cleanup;
 			}
-			LOG("create directory %s\n", path);;
+			LOG("create directory %s\n", path);
 			if (mkdir(path, mode) == -1) {
 				PERROR("mkdir");
 				err = -1;
@@ -2634,6 +2648,40 @@ static int mkdir_all(const char *path, mode_t mode)
 	}
 
  cleanup:
+	if (path_copy != NULL) {
+		free(path_copy);
+	}
+	return err;
+}
+
+static int mkfile_all(const char *path, mode_t dir_mode, mode_t file_mode)
+{
+	char *path_copy = NULL, *dir = NULL;
+	int fd = -1, err = 0;
+
+	path_copy = strdup(path);
+	if (path_copy == NULL) {
+		PERROR("strdup");
+		err = -1;
+		goto cleanup;
+	}
+	dir = dirname(path_copy);
+	if (mkdir_all(dir, dir_mode) == -1) {
+		err = -1;
+		goto cleanup;
+	}
+	LOG("create file %s\n", path);
+	fd = open(path, O_CREAT | O_RDONLY, file_mode);
+	if (fd == -1) {
+		PERROR("mkdir_all open");
+	}
+
+ cleanup:
+	if (fd >= 0) {
+		if (close(fd) == -1) {
+			PERROR("close mkdir_all descriptor");
+		}
+	}
 	if (path_copy != NULL) {
 		free(path_copy);
 	}

@@ -348,9 +348,12 @@ processes inside a user namespace.
 
 If they don't start with a slash, **`source`** and **`target`** are
 interpreted as paths relative to ccon's [current working
-directory][getcwd.3].  If **`target`** does not exist, ccon will
-attempt to create it by calling [`mkdir`][mkdir.3p], making multiple
-calls if necessary.
+directory][getcwd.3].
+
+If **`target`** does not exist, ccon will attempt to create it by
+calling [`mkdir`][mkdir.3p], making multiple calls if necessary.  If
+**`source`** is set to a non-directory and **`target`** does not exit,
+ccon will create an empty file at **`target`** to mount over.
 
 In addition to the usual types supported by [`mount`][mount.2], ccon
 supports a `pivot-root` **`type`** that invokes the
