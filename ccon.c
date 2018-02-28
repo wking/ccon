@@ -306,27 +306,30 @@ static int validate_config(json_t * config)
 	    "s?s,"	/* "version": "0.1.0" */
 	    "s?{"	/* "namespaces": { */
 	      "s?{,"	/* "user": { */
-	        "s?s,"	/* "path": "/proc/123/ns/user */
+	        "s?s,"	/* "path": "/proc/123/ns/user" */
 	        "s?b,"	/* "setgroups": false */
 	        "s?[*],"	/* "uidMappings": [...] */
 	        "s?[*]"	/* "gidMappings": [...] */
 	      "},"	/* }  (user) */
 	      "s?{,"	/* "mount": { */
-	        "s?s,"	/* "path": "/proc/123/ns/mnt */
+	        "s?s,"	/* "path": "/proc/123/ns/mnt" */
 	        "s?[*]"	/* "mounts": [...] */
 	      "},"	/* }  (mount) */
 	      "s?{"	/* "pid": {...} */
-	        "s?s,"	/* "path": "/proc/123/ns/pid */
+	        "s?s,"	/* "path": "/proc/123/ns/pid" */
 	      "},"	/* }  (pid) */
 	      "s?{,"	/* "net": {...} */
-	        "s?s,"	/* "path": "/proc/123/ns/net */
+	        "s?s,"	/* "path": "/proc/123/ns/net" */
 	      "},"	/* }  (net) */
 	      "s?{,"	/* "ipc": {...} */
-	        "s?s,"	/* "path": "/proc/123/ns/ipc */
+	        "s?s,"	/* "path": "/proc/123/ns/ipc" */
 	      "},"	/* }  (ipc) */
 	      "s?{,"	/* "uts": {...} */
-	        "s?s,"	/* "path": "/proc/123/ns/uts */
+	        "s?s,"	/* "path": "/proc/123/ns/uts" */
 	      "},"	/* }  (uts) */
+	      "s?{,"	/* "cgroup": {...} */
+	        "s?s,"	/* "path": "/proc/123/ns/cgroup" */
+	      "},"	/* }  (cgroup) */
 	    "},"	/* }  (namespaces) */
 	    "s?b,"	/* "console": { */
 	    "s?{"	/* "process": { */
@@ -366,6 +369,8 @@ static int validate_config(json_t * config)
 	    "ipc",
 	      "path",
 	    "uts",
+	      "path",
+	    "cgroup",
 	      "path",
 	  "console",
 	  "process",
@@ -1784,6 +1789,8 @@ static int get_namespace_type(const char *name, int *nstype)
 {
 	if (strncmp("mount", name, strlen("mount") + 1) == 0) {
 		*nstype = CLONE_NEWNS;
+	} else if (strncmp("cgroup", name, strlen("cgroup") + 1) == 0) {
+		*nstype = CLONE_NEWCGROUP;
 	} else if (strncmp("uts", name, strlen("uts") + 1) == 0) {
 		*nstype = CLONE_NEWUTS;
 	} else if (strncmp("ipc", name, strlen("ipc") + 1) == 0) {

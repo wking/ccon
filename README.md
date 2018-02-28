@@ -24,6 +24,7 @@ less opinionated than [LXC][lxc.container.conf.5]).
     * [Network namespace](#network-namespace)
     * [IPC namespace](#ipc-namespace)
     * [UTS namespace](#uts-namespace)
+    * [Cgroup namespace](#cgroup-namespace)
   * [Console](#console)
   * [Process](#process)
     * [Terminal](#terminal)
@@ -463,6 +464,15 @@ for [`sethostname`][gethostname.2].
 * **`uts`** (optional, object) which may contain:
   * **`path`** (optional, string) the absolute path to a UTS namespace
     which the container process should join.
+
+#### Cgroup namespace
+
+There is no special configuration for the [cgroup
+namespace][cgroup_namespaces.7].
+
+* **`cgroup`** (optional, object) which may contain:
+  * **`path`** (optional, string) the absolute path to an IPC
+    namespace which the container process should join.
 
 ### Console
 
@@ -963,6 +973,7 @@ be distributed under the GPLv3+.
 [proc.5]: https://linuxcontainers.org/lxc/manpages/man5/proc.5.html
 [ascii.7]: http://man7.org/linux/man-pages/man7/ascii.7.html
 [capabilities.7]: http://man7.org/linux/man-pages/man7/capabilities.7.html
+[cgroup_namespaces.7]: http://man7.org/linux/man-pages/man7/cgroup_namespaces.7.html
 [namespaces.7]: http://man7.org/linux/man-pages/man7/namespaces.7.html
 [pid_namespaces.7]: http://man7.org/linux/man-pages/man7/pid_namespaces.7.html
 [pty.7]: http://man7.org/linux/man-pages/man7/pty.7.html
