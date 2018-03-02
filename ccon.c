@@ -75,8 +75,8 @@ typedef struct child_func_args {
 extern char **environ;
 
 /* global PIDs for signal handling */
-static pid_t child_pid;
-static pid_t hook_pid;
+static volatile pid_t child_pid;
+static volatile pid_t hook_pid;
 
 static int parse_args(int argc, char **argv, const char **config_path,
 		      const char **config_string, const char **socket_path);
