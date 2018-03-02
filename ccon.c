@@ -75,8 +75,8 @@ typedef struct child_func_args {
 extern char **environ;
 
 /* global PIDs for signal handling */
-static volatile pid_t child_pid;
-static volatile pid_t hook_pid;
+static volatile pid_t child_pid = -1;
+static volatile pid_t hook_pid = -1;
 
 static int parse_args(int argc, char **argv, const char **config_path,
 		      const char **config_string, const char **socket_path);
@@ -531,6 +531,28 @@ static int run_container(json_t * config, const char *socket_path)
 		goto cleanup;
 	}
 
+	act.sa_flags = SA_SIGINFO;
+	act.sa_sigaction = kill_child;
+	if (sigemptyset(&act.sa_mask) == -1) {
+		PERROR("sigemptyset");
+		err = 1;
+		goto cleanup;
+	}
+	if (sigaction(SIGHUP, &act, NULL) ||
+	    sigaction(SIGINT, &act, NULL) || sigaction(SIGTERM, &act, NULL)) {
+		PERROR("sigaction");
+		err = 1;
+		goto cleanup;
+	}
+
+	act.sa_flags = SA_SIGINFO | SA_NOCLDSTOP;
+	act.sa_sigaction = reap_child;
+	if (sigaction(SIGCHLD, &act, NULL)) {
+		PERROR("sigaction");
+		err = 1;
+		goto cleanup;
+	}
+
 	stack = malloc(STACK_SIZE);
 	if (!stack) {
 		PERROR("malloc");
@@ -539,28 +561,9 @@ static int run_container(json_t * config, const char *socket_path)
 	}
 	stack_top = stack + STACK_SIZE;	/* assume stack grows downward */
 
-	cpid = clone(&child_func, stack_top, flags, &child_args);
+	child_pid = cpid = clone(&child_func, stack_top, flags, &child_args);
 	if (cpid == -1) {
 		PERROR("clone");
-		err = 1;
-		goto cleanup;
-	}
-
-	child_pid = cpid;
-	act.sa_flags = SA_SIGINFO;
-	sigemptyset(&act.sa_mask);
-	act.sa_sigaction = kill_child;
-	if (sigaction(SIGHUP, &act, NULL) ||
-	    sigaction(SIGINT, &act, NULL) || sigaction(SIGTERM, &act, NULL)) {
-		PERROR("signal");
-		err = 1;
-		goto cleanup;
-	}
-
-	act.sa_flags = SA_SIGINFO | SA_NOCLDSTOP;
-	act.sa_sigaction = reap_child;
-	if (sigaction(SIGCHLD, &act, NULL)) {
-		PERROR("signal");
 		err = 1;
 		goto cleanup;
 	}
@@ -777,7 +780,22 @@ static int handle_parent(json_t * config, const char *socket_path, pid_t cpid,
 static int child_func(void *arg)
 {
 	child_func_args_t *child_args = (child_func_args_t *) arg;
+	struct sigaction act;
 	int err = 0, i;
+
+	act.sa_flags = 0;
+	act.sa_handler = SIG_DFL;
+	if (sigemptyset(&act.sa_mask) == -1) {
+		PERROR("sigemptyset");
+		err = 1;
+		goto cleanup;
+	}
+	if (sigaction(SIGHUP, &act, NULL) ||
+	    sigaction(SIGINT, &act, NULL) || sigaction(SIGTERM, &act, NULL)) {
+		PERROR("sigaction");
+		err = 1;
+		goto cleanup;
+	}
 
 	if (prctl(PR_SET_PDEATHSIG, SIGKILL)) {
 		PERROR("prctl");
