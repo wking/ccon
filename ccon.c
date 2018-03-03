@@ -1457,6 +1457,12 @@ static int run_hooks(json_t * config, const char *name, pid_t cpid)
 		}
 
 		if (hpid == 0) {	/* child */
+			if (prctl(PR_SET_PDEATHSIG, SIGKILL)) {
+				PERROR("prctl");
+				err = 1;
+				goto cleanup;
+			}
+
 			if (close(sockets[0])) {
 				PERROR
 				    ("close host side of socket pair after fork");
