@@ -82,7 +82,7 @@ static int parse_args(int argc, char **argv, const char **config_path,
 		      const char **config_string, const char **socket_path);
 static void usage(FILE * stream, char *path);
 static void version();
-static void kill_child(int signum, siginfo_t * siginfo, void *unused);
+static void kill_children(int signum, siginfo_t * siginfo, void *unused);
 static void reap_child(int signum, siginfo_t * siginfo, void *unused);
 static int validate_config(json_t * config);
 static int validate_version(const char *version);
@@ -239,12 +239,17 @@ static void version()
 	printf("ccon %s\n", CCON_VERSION);
 }
 
-static void kill_child(int signum, siginfo_t * siginfo, void *unused)
+static void kill_children(int signum, siginfo_t * siginfo, void *unused)
 {
-	pid_t cpid = child_pid;
+	pid_t cpid = child_pid, hpid = hook_pid;
 
 	if (cpid > 0) {
-		if (kill(cpid, SIGKILL)) {
+		if (kill(cpid, signum)) {
+			PERROR("kill");
+		}
+	}
+	if (hpid > 0) {
+		if (kill(hpid, signum)) {
 			PERROR("kill");
 		}
 	}
@@ -532,7 +537,7 @@ static int run_container(json_t * config, const char *socket_path)
 	}
 
 	act.sa_flags = SA_SIGINFO;
-	act.sa_sigaction = kill_child;
+	act.sa_sigaction = kill_children;
 	if (sigemptyset(&act.sa_mask) == -1) {
 		PERROR("sigemptyset");
 		err = 1;
@@ -733,21 +738,21 @@ static int handle_parent(json_t * config, const char *socket_path, pid_t cpid,
 
  wait:
 	if (err) {
-		kill_child(0, NULL, NULL);
+		kill_children(SIGKILL, NULL, NULL);
 	}
 
 	if (close(*socket) == -1) {
 		PERROR("close host-side socket");
 		err = 1;
 		*socket = -1;
-		kill_child(0, NULL, NULL);
+		kill_children(SIGKILL, NULL, NULL);
 	}
 	*socket = -1;
 
 	if (!err && master >= 0) {
 		if (splice_pseudoterminal_master(&master, &slave)) {
 			err = 1;
-			kill_child(0, NULL, NULL);
+			kill_children(SIGKILL, NULL, NULL);
 		}
 	}
 
@@ -755,7 +760,7 @@ static int handle_parent(json_t * config, const char *socket_path, pid_t cpid,
 		if (close(master) == -1) {
 			PERROR("close pseudoterminal master");
 			err = 1;
-			kill_child(0, NULL, NULL);
+			kill_children(SIGKILL, NULL, NULL);
 		}
 	}
 
@@ -763,7 +768,7 @@ static int handle_parent(json_t * config, const char *socket_path, pid_t cpid,
 		if (close(slave) == -1) {
 			PERROR("close pseudoterminal slave");
 			err = 1;
-			kill_child(0, NULL, NULL);
+			kill_children(SIGKILL, NULL, NULL);
 		}
 	}
 

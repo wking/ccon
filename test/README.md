@@ -39,6 +39,8 @@ digit.  The first digit classifies the test:
   [`pwd`][pwd.1], [`readlink`][readlink.1], [`sleep`][sleep.1],
   [`touch`][touch.1], [`test`][test.1], [`timeout`][timeout.1], and
   [`tty`][tty.1].
+* [procps][] for [`ps`][ps.1].
+* [`kill`][kill.1] from [coreutils][], [procps][], or [util-linux][].
 * [Grep][] for [`grep`][grep.1].
 * [net-tools][] for [`hostname`][hostname.1].
 * [Sed][] for [`sed`][sed.1].
@@ -55,9 +57,11 @@ digit.  The first digit classifies the test:
 [libcap-ng]: http://people.redhat.com/sgrubb/libcap-ng/
 [net-tools]: http://net-tools.sourceforge.net/
 [prove]: http://perldoc.perl.org/prove.html
+[procps]: https://gitlab.com/procps-ng/procps
 [sed]: http://sed.sourceforge.net/
 [Sharness]: https://chriscool.github.io/sharness/
 [submodule]: https://git-scm.com/docs/git-submodule
+[util-linux]: https://www.kernel.org/pub/linux/utils/util-linux/
 
 [cat.1]: http://pubs.opengroup.org/onlinepubs/9699919799/utilities/cat.html
 [echo.1]: http://pubs.opengroup.org/onlinepubs/9699919799/utilities/echo.html
@@ -67,7 +71,9 @@ digit.  The first digit classifies the test:
 [hostname.1]: http://man7.org/linux/man-pages/man1/hostname.1.html
 [id.1]: http://pubs.opengroup.org/onlinepubs/9699919799/utilities/id.html
 [inotifywait.1]: http://man7.org/linux/man-pages/man1/inotifywait.1.html
+[kill.1]: http://pubs.opengroup.org/onlinepubs/9699919799/utilities/kill.html
 [printf.1]: http://pubs.opengroup.org/onlinepubs/9699919799/utilities/printf.html
+[ps.1]: http://pubs.opengroup.org/onlinepubs/9699919799/utilities/ps.html
 [pwd.1]: http://pubs.opengroup.org/onlinepubs/9699919799/utilities/pwd.html
 [sed.1]: http://pubs.opengroup.org/onlinepubs/9699919799/utilities/sed.html
 [sh.1]: http://pubs.opengroup.org/onlinepubs/9699919799/utilities/sh.html
