@@ -662,7 +662,7 @@ static int handle_parent(json_t * config, const char *socket_path, pid_t cpid,
 		PERROR("sendmsg");
 		err = 1;
 		goto wait;
-	} else if (n != iov.iov_len) {
+	} else if ((size_t) n != iov.iov_len) {
 		LOG("did not send the expected number of bytes: %d != %d\n",
 		    (int)n, (int)iov.iov_len);
 		err = 1;
@@ -678,7 +678,7 @@ static int handle_parent(json_t * config, const char *socket_path, pid_t cpid,
 		goto wait;
 	}
 	len = strlen(CONTAINER_SETUP_COMPLETE);
-	if (len != n ||
+	if (len != (size_t) n ||
 	    strncmp(CONTAINER_SETUP_COMPLETE, iov.iov_base, len) != 0) {
 		LOG("unexpected message from container (%d): %.*s\n", (int)n,
 		    (int)n, (char *)iov.iov_base);
@@ -704,7 +704,7 @@ static int handle_parent(json_t * config, const char *socket_path, pid_t cpid,
 			PERROR("sendmsg");
 			err = 1;
 			goto wait;
-		} else if (n != iov.iov_len) {
+		} else if ((size_t) n != iov.iov_len) {
 			LOG("did not send the expected number of bytes: %d != %d\n", (int)n, (int)iov.iov_len);
 			err = 1;
 			goto wait;
@@ -855,7 +855,7 @@ static int handle_child(json_t * config, int *socket, int *exec_fd,
 		return 1;
 	}
 	len = strlen(USER_NAMESPACE_MAPPING_COMPLETE);
-	if (len != n ||
+	if (len != (size_t) n ||
 	    strncmp(USER_NAMESPACE_MAPPING_COMPLETE, iov.iov_base, len) != 0) {
 		LOG("unexpected message from host (%d): %.*s\n", (int)n, (int)n,
 		    (char *)iov.iov_base);
@@ -876,7 +876,7 @@ static int handle_child(json_t * config, int *socket, int *exec_fd,
 	if (n == -1) {
 		PERROR("sendmsg");
 		return 1;
-	} else if (n != iov.iov_len) {
+	} else if ((size_t) n != iov.iov_len) {
 		LOG("did not send the expected number of bytes: %d != %d\n",
 		    (int)n, (int)iov.iov_len);
 		return 1;
@@ -896,7 +896,7 @@ static int handle_child(json_t * config, int *socket, int *exec_fd,
 	}
 	len = strlen(EXEC_PROCESS);
 	len2 = strlen(CONNECTION_SOCKET);
-	if (len == n && strncmp(EXEC_PROCESS, iov.iov_base, len) == 0) {
+	if (len == (size_t) n && strncmp(EXEC_PROCESS, iov.iov_base, len) == 0) {
 		if (!process) {
 			LOG("process not defined, exiting\n");
 			return 0;
@@ -904,7 +904,7 @@ static int handle_child(json_t * config, int *socket, int *exec_fd,
 		exec_process(process, console
 			     && json_boolean_value(console), 1, 1, socket,
 			     exec_fd);
-	} else if (len2 == n
+	} else if (len2 == (size_t) n
 		   && strncmp(CONNECTION_SOCKET, iov.iov_base, len2) == 0) {
 		serve_socket(process, console
 			     && json_boolean_value(console), socket);
@@ -1601,7 +1601,7 @@ static int setup_socket(const char *path, int *container_socket)
 		goto cleanup;
 	}
 	len = strlen(EXEC_PROCESS);
-	if (len != n || strncmp(EXEC_PROCESS, iov.iov_base, len) != 0) {
+	if (len != (size_t) n || strncmp(EXEC_PROCESS, iov.iov_base, len) != 0) {
 		LOG("unexpected message from container (%d): %.*s\n", (int)n,
 		    (int)n, (char *)iov.iov_base);
 		err = 1;
@@ -1681,7 +1681,7 @@ static int serve_socket(json_t * process, int console, int *socket)
 				n = sendmsg(data_socket, &msg, 0);
 				if (n == -1) {
 					PERROR("sendmsg");
-				} else if (n != iov.iov_len) {
+				} else if ((size_t) n != iov.iov_len) {
 					LOG("did not send the expected number of bytes: %d != %d\n", (int)n, (int)iov.iov_len);
 				}
 				goto cleanup;
@@ -1707,7 +1707,8 @@ static int serve_socket(json_t * process, int console, int *socket)
 							    &msg, 0);
 						if (n == -1) {
 							PERROR("sendmsg");
-						} else if (n != iov.iov_len) {
+						} else if ((size_t) n !=
+							   iov.iov_len) {
 							LOG("did not send the expected number of bytes: %d != %d\n", (int)n, (int)iov.iov_len);
 						}
 					}
@@ -1726,7 +1727,8 @@ static int serve_socket(json_t * process, int console, int *socket)
 							    &msg, 0);
 						if (n == -1) {
 							PERROR("sendmsg");
-						} else if (n != iov.iov_len) {
+						} else if ((size_t) n !=
+							   iov.iov_len) {
 							LOG("did not send the expected number of bytes: %d != %d\n", (int)n, (int)iov.iov_len);
 						}
 						goto cleanup;
@@ -1741,7 +1743,7 @@ static int serve_socket(json_t * process, int console, int *socket)
 				PERROR("sendmsg");
 				err = 1;
 				goto cleanup;
-			} else if (n != iov.iov_len) {
+			} else if ((size_t) n != iov.iov_len) {
 				LOG("did not send the expected number of bytes: %d != %d\n", (int)n, (int)iov.iov_len);
 				err = 1;
 				goto cleanup;
@@ -1769,7 +1771,7 @@ static int serve_socket(json_t * process, int console, int *socket)
 				PERROR("sendmsg");
 				err = 1;
 				goto cleanup;
-			} else if (n != iov.iov_len) {
+			} else if ((size_t) n != iov.iov_len) {
 				LOG("did not send the expected number of bytes: %d != %d\n", (int)n, (int)iov.iov_len);
 				err = 1;
 				goto cleanup;
