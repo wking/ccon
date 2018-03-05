@@ -65,7 +65,13 @@ test_expect_success CAT,SED 'Test --verbose' "
 	ccon --verbose --config-string '{\"version\": \"0.1.0\"}' 2>actual &&
 	sed 's/[0-9][0-9]*/###/g' actual >actual-no-PID &&
 	cat <<-EOF >expected &&
+		block SIGHUP, SIGINT, and SIGTERM
+		install ccon's SIGCHLD handler
+		install ccon's SIGHUP, SIGINT, and SIGTERM handlers
 		launched container process with PID ###
+		unblock SIGHUP, SIGINT, and SIGTERM
+		restore default SIGHUP, SIGINT, and SIGTERM handlers
+		unblock SIGHUP, SIGINT, and SIGTERM
 		process not defined, exiting
 		container process ### exited with ###
 	EOF

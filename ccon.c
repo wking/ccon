@@ -84,6 +84,10 @@ static void usage(FILE * stream, char *path);
 static void version();
 static void kill_children(int signum, siginfo_t * siginfo, void *unused);
 static void reap_child(int signum, siginfo_t * siginfo, void *unused);
+static int block_signals();
+static int unblock_signals();
+static int install_signal_handlers();
+static int uninstall_signal_handlers();
 static int validate_config(json_t * config);
 static int validate_version(const char *version);
 static float version_api(const char *version);
@@ -272,6 +276,92 @@ static void reap_child(int signum, siginfo_t * siginfo, void *unused)
 	}
 
 	return;
+}
+
+static int block_signals()
+{
+	sigset_t sa_mask;
+
+	LOG("block SIGHUP, SIGINT, and SIGTERM\n");
+	if (sigaddset(&sa_mask, SIGHUP) || sigaddset(&sa_mask, SIGINT)
+	    || sigaddset(&sa_mask, SIGTERM)) {
+		PERROR("sigaddset");
+		return -1;
+	}
+	if (sigprocmask(SIG_BLOCK, &sa_mask, NULL) == -1) {
+		PERROR("sigprocmask");
+		return -1;
+	}
+
+	return 0;
+}
+
+static int unblock_signals()
+{
+	sigset_t sa_mask;
+
+	LOG("unblock SIGHUP, SIGINT, and SIGTERM\n");
+	if (sigemptyset(&sa_mask) == -1) {
+		PERROR("sigemptyset");
+		return -1;
+	}
+	if (sigprocmask(SIG_SETMASK, &sa_mask, NULL) == -1) {
+		PERROR("sigprocmask");
+		return -1;
+	}
+
+	return 0;
+}
+
+static int install_signal_handlers()
+{
+	struct sigaction act;
+
+	LOG("install ccon's SIGCHLD handler\n");
+	act.sa_flags = SA_SIGINFO | SA_NOCLDSTOP;
+	act.sa_sigaction = reap_child;
+	if (sigemptyset(&act.sa_mask) == -1) {
+		PERROR("sigemptyset");
+		return -1;
+	}
+	if (sigaction(SIGCHLD, &act, NULL)) {
+		PERROR("sigaction");
+		return -1;
+	}
+
+	LOG("install ccon's SIGHUP, SIGINT, and SIGTERM handlers\n");
+	act.sa_sigaction = kill_children;
+	act.sa_flags = SA_SIGINFO;
+	if (sigemptyset(&act.sa_mask) == -1) {
+		PERROR("sigemptyset");
+		return -1;
+	}
+	if (sigaction(SIGHUP, &act, NULL) ||
+	    sigaction(SIGINT, &act, NULL) || sigaction(SIGTERM, &act, NULL)) {
+		PERROR("sigaction");
+		return -1;
+	}
+
+	return 0;
+}
+
+static int uninstall_signal_handlers()
+{
+	struct sigaction act;
+
+	LOG("restore default SIGHUP, SIGINT, and SIGTERM handlers\n");
+	act.sa_handler = SIG_DFL;
+	if (sigemptyset(&act.sa_mask) == -1) {
+		PERROR("sigemptyset");
+		return -1;
+	}
+	if (sigaction(SIGHUP, &act, NULL) ||
+	    sigaction(SIGINT, &act, NULL) || sigaction(SIGTERM, &act, NULL)) {
+		PERROR("sigaction");
+		return -1;
+	}
+
+	return 0;
 }
 
 static int validate_config(json_t * config)
@@ -498,7 +588,6 @@ static float version_api(const char *version)
 static int run_container(json_t * config, const char *socket_path)
 {
 	json_t *process;
-	struct sigaction act;
 	child_func_args_t child_args;
 	char *stack = NULL, *stack_top;
 	int sockets[2];
@@ -536,28 +625,6 @@ static int run_container(json_t * config, const char *socket_path)
 		goto cleanup;
 	}
 
-	act.sa_flags = SA_SIGINFO;
-	act.sa_sigaction = kill_children;
-	if (sigemptyset(&act.sa_mask) == -1) {
-		PERROR("sigemptyset");
-		err = 1;
-		goto cleanup;
-	}
-	if (sigaction(SIGHUP, &act, NULL) ||
-	    sigaction(SIGINT, &act, NULL) || sigaction(SIGTERM, &act, NULL)) {
-		PERROR("sigaction");
-		err = 1;
-		goto cleanup;
-	}
-
-	act.sa_flags = SA_SIGINFO | SA_NOCLDSTOP;
-	act.sa_sigaction = reap_child;
-	if (sigaction(SIGCHLD, &act, NULL)) {
-		PERROR("sigaction");
-		err = 1;
-		goto cleanup;
-	}
-
 	stack = malloc(STACK_SIZE);
 	if (!stack) {
 		PERROR("malloc");
@@ -566,14 +633,29 @@ static int run_container(json_t * config, const char *socket_path)
 	}
 	stack_top = stack + STACK_SIZE;	/* assume stack grows downward */
 
+	if (block_signals() == -1) {
+		err = 1;
+		goto cleanup;
+	}
+
+	if (install_signal_handlers() == -1) {
+		err = 1;
+		goto cleanup;
+	}
+
 	child_pid = cpid = clone(&child_func, stack_top, flags, &child_args);
 	if (cpid == -1) {
 		PERROR("clone");
 		err = 1;
 		goto cleanup;
 	}
-
 	LOG("launched container process with PID %d\n", cpid);
+
+	if (unblock_signals() == -1) {
+		err = 1;
+		goto cleanup;
+	}
+
 	if (close(sockets[1]) == -1) {
 		PERROR("close container-side socket");
 		sockets[1] = -1;
@@ -785,25 +867,15 @@ static int handle_parent(json_t * config, const char *socket_path, pid_t cpid,
 static int child_func(void *arg)
 {
 	child_func_args_t *child_args = (child_func_args_t *) arg;
-	struct sigaction act;
 	int err = 0, i;
-
-	act.sa_flags = 0;
-	act.sa_handler = SIG_DFL;
-	if (sigemptyset(&act.sa_mask) == -1) {
-		PERROR("sigemptyset");
-		err = 1;
-		goto cleanup;
-	}
-	if (sigaction(SIGHUP, &act, NULL) ||
-	    sigaction(SIGINT, &act, NULL) || sigaction(SIGTERM, &act, NULL)) {
-		PERROR("sigaction");
-		err = 1;
-		goto cleanup;
-	}
 
 	if (prctl(PR_SET_PDEATHSIG, SIGKILL)) {
 		PERROR("prctl");
+		err = 1;
+		goto cleanup;
+	}
+
+	if (uninstall_signal_handlers() || unblock_signals()) {
 		err = 1;
 		goto cleanup;
 	}
@@ -1449,6 +1521,11 @@ static int run_hooks(json_t * config, const char *name, pid_t cpid)
 			goto cleanup;
 		}
 
+		if (block_signals() == -1) {
+			err = 1;
+			goto cleanup;
+		}
+
 		hpid = fork();
 		if (hpid == -1) {
 			PERROR("fork");
@@ -1459,6 +1536,11 @@ static int run_hooks(json_t * config, const char *name, pid_t cpid)
 		if (hpid == 0) {	/* child */
 			if (prctl(PR_SET_PDEATHSIG, SIGKILL)) {
 				PERROR("prctl");
+				err = 1;
+				goto cleanup;
+			}
+
+			if (uninstall_signal_handlers() || unblock_signals()) {
 				err = 1;
 				goto cleanup;
 			}
@@ -1495,6 +1577,11 @@ static int run_hooks(json_t * config, const char *name, pid_t cpid)
 
 		hook_pid = hpid;
 		LOG("launched hook %d with PID %d\n", (int)i, hpid);
+
+		if (unblock_signals() == -1) {
+			err = 1;
+			goto cleanup;
+		}
 
 		if (close(sockets[1])) {
 			PERROR("close hook side of socket pair after fork");
