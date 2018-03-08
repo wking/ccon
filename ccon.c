@@ -2386,7 +2386,9 @@ static int handle_mounts(json_t * config)
 					PERROR("stat");
 					return 1;
 				}
-				mkdir = S_ISDIR(buf.st_mode);
+				if (flags | MS_BIND && !S_ISDIR(buf.st_mode)) {
+					mkdir = 0;
+				}
 			}
 			if (mkdir) {
 				if (mkdir_all(target, 0777) == -1) {
